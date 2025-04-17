@@ -23,3 +23,16 @@ go.work.sum
 
 # env file
 .env
+
+# Build directories
+bin/
+build/
+
+# Vendor directory (if not using vendoring)
+vendor/
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+.DS_Store
