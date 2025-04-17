@@ -4,4 +4,4 @@ A lightweight websocket gateway and authentication proxy written in Go.
 
 # requirements
 
-go1.21+
+go1.23+

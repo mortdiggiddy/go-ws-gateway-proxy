@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 )
 
 // ParseMQTTConnect parses a raw MQTT CONNECT packet and returns the username and password (JWT)
@@ -25,12 +26,18 @@ func ParseMQTTConnect(packet []byte) (string, string, error) {
 
 	// Protocol name
 	protoName, err := readUTF8String(buf)
+
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read protocol name: %w", err)
 	}
 
+	if protoName != "MQTT" {
+		return "", "", fmt.Errorf("unexpected protocol name: %s", protoName)
+	}
+
 	// Protocol version
 	protoLevel, err := buf.ReadByte()
+
 	if err != nil {
 		return "", "", fmt.Errorf("failed to read protocol level: %w", err)
 	}
@@ -44,6 +51,9 @@ func ParseMQTTConnect(packet []byte) (string, string, error) {
 	default:
 		return "", "", fmt.Errorf("unsupported MQTT version: %d", protoLevel)
 	}
+
+	log.Printf("Received MQTT %s CONNECT", mqttVersion)
+
 
 	// Connect flags
 	connectFlags, err := buf.ReadByte()

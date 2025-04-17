@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/mortdiggiddy/go-ws-gateway/internal/auth"
@@ -35,29 +36,33 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 2: Parse MQTT CONNECT to extract JWT
+	// Step 2: Parse MQTT CONNECT to extract username and JWT
 	username, jwtToken, err := mqtt.ParseMQTTConnect(packet)
-	
 	if err != nil {
 		log.Println("MQTT CONNECT parse error:", err)
-		conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(1002, "Bad MQTT CONNECT"), r.Context().Done())
+		conn.WriteControl(
+			websocket.CloseMessage, 
+			websocket.FormatCloseMessage(1002, "Bad MQTT CONNECT"), 
+			time.Now().Add(1*time.Second))
 		return
 	}
 
 	log.Printf("CONNECT from user=%s\n", username)
 
-	// Step 3: Verify JWT
-	valid, err := auth.VerifyJWT(jwtToken)
-	if !valid || err != nil {
+	// Step 3: Verify JWT using request context
+	valid, err := auth.VerifyJWT(r.Context(), jwtToken)
+	if err != nil || !valid {
 		log.Printf("JWT invalid: %v\n", err)
-		conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(1008, "JWT invalid or expired"), r.Context().Done())
+		conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(1008, "JWT invalid or expired"),
+			time.Now().Add(1*time.Second),
+		)
 		return
 	}
 
-	// Step 4: Proxy to RabbitMQ WS MQTT backend
-	err = proxy.ProxyToRabbitMQ(conn, packet, r)
-	if err != nil {
+	// Step 4: Proxy traffic to RabbitMQ backend
+	if err := proxy.ProxyToRabbitMQ(conn, packet, r); err != nil {
 		log.Println("Proxying failed:", err)
-		return
 	}
 }
