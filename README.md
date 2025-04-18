@@ -49,6 +49,8 @@ Written in Go for performance and concurrency, it uses:
 Single endpoint (`/ws`) supports both:
 
 - MQTT-over-WebSocket (e.g., RabbitMQ w/ MQTT plugin)
+- EMQX
+- Mosquitto with WebSocket bridge
 - Raw WebSocket clients (e.g., control channels, JSON-RPC, custom frames)
 
 ### ✅ Intelligent Protocol Discovery
@@ -58,9 +60,6 @@ The gateway uses a lightweight parser to autodetect the protocol:
 ```go
 protocol, username, token, err := ParseConnect(packet)
 ```
-
-- If MQTT: forwards to RabbitMQ
-- If raw: forwards to a different upstream or echoes
 
 ### ✅ Secure JWT Validation
 
