@@ -11,13 +11,18 @@ Modern real-time systems demand scalable gateways to ingest connections from het
 - MQTT-over-WebSocket (for sensor data, telemetry, robotics)
 - Raw WebSocket (for JSON RPC, custom protocols, command channels)
 
-You need a gateway that:
+While WebSocket is a great transport for bidirectional communication, **many WebSocket backends (like RabbitMQ, EMQX, or internal services) do not provide native authentication or authorization**. This project introduces a secure **middle-layer proxy** that provides:
 
-- Authenticates clients
-- Understands different protocols
-- Forwards data transparently and efficiently
-- Can be deployed behind TLS ingress layers (like Traefik or NGINX)
-- Observes and audits sessions at scale
+- **JWT-based authentication** on every incoming connection
+- **Protocol detection and dispatching**
+- **Observability and metrics**
+- **Deployment simplicity behind ingress gateways like Traefik or NGINX**
+
+**Why JWT?**
+
+- Because it's interoperable with any **OIDC-compliant identity provider** (like Keycloak, Auth0, AWS Cognito, Azure AD)
+- JWTs can be **embedded in MQTT CONNECT packets**, used as initial messages, or sent in headers in future extensions
+- This allows the gateway to be a proper **security enforcement boundary**, even when the backend lacks native identity controls
 
 **This project is that gateway.**
 
@@ -66,6 +71,8 @@ protocol, username, token, err := ParseConnect(packet)
 - JWTs extracted from MQTT `password` or raw WS payload
 - Validated using JWKS from Keycloak (or any OIDC-compliant provider)
 - Claims parsed: `sub`, `preferred_username`, `iat`, `exp`, `jti`
+
+This creates a **security envelope** on top of the WebSocket protocol, even when the downstream WebSocket service (like RabbitMQ) lacks native identity enforcement.
 
 ### ✅ Transparent Proxying
 
