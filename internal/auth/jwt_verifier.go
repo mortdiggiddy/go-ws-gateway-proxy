@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,24 +15,40 @@ import (
 )
 
 var (
-	jwksURL        = "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
-	jwksCache      jwk.Set
-	jwksLastFetch  time.Time
-	jwksTTL        = 10 * time.Minute
-	jwksMutex      sync.RWMutex
+	// *** changed: read from environment variable with fallback ***
+	jwksURL = func() string {
+		if url := os.Getenv("JWKS_URL"); url != "" {
+			return url
+		}
+		return "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
+	}()
+
+	jwksCache     jwk.Set
+	jwksLastFetch time.Time
+	// *** changed: TTL is now configurable ***
+	jwksTTL = func() time.Duration {
+		if val := os.Getenv("JWKS_TTL_MINUTES"); val != "" {
+			if ttl, err := time.ParseDuration(val + "m"); err == nil {
+				return ttl
+			}
+		}
+		return 10 * time.Minute
+	}()
+
+	jwksMutex sync.RWMutex
 )
 
 // getJWKS fetches and caches the JWKS set with expiration logic
 func getJWKS(ctx context.Context) (jwk.Set, error) {
-	jwksMutex.RLock()
+	jwksMutex.RLock() // multiple readers for RLock, optimistic read
 	if time.Since(jwksLastFetch) < jwksTTL && jwksCache != nil {
 		defer jwksMutex.RUnlock()
 		return jwksCache, nil
 	}
 	jwksMutex.RUnlock()
 
-	jwksMutex.Lock()
-	defer jwksMutex.Unlock()
+	jwksMutex.Lock() // only one writer
+	defer jwksMutex.Unlock() // always release
 
 	// Double-check after acquiring write lock
 	if time.Since(jwksLastFetch) < jwksTTL && jwksCache != nil {
@@ -44,14 +62,15 @@ func getJWKS(ctx context.Context) (jwk.Set, error) {
 
 	jwksCache = set
 	jwksLastFetch = time.Now()
-	log.Println("JWKS refreshed from Keycloak")
+	log.Println("JWKS refreshed.")
 	return set, nil
 }
 
-// VerifyJWT validates the JWT's signature and expiration using the cached JWKS
+// VerifyJWT validates the JWT's signature, claims, and expiration using the cached JWKS
 func VerifyJWT(ctx context.Context, tokenString string) (bool, error) {
 	set, err := getJWKS(ctx)
 	if err != nil {
+		log.Printf("error retrieving JWKS: %v", err)
 		return false, err
 	}
 
@@ -71,11 +90,35 @@ func VerifyJWT(ctx context.Context, tokenString string) (bool, error) {
 		return rawKey, nil
 	}
 
-	parsedToken, err := jwt.Parse(tokenString, keyfunc, jwt.WithValidMethods([]string{"RS256"}))
+	expectedIssuer := os.Getenv("JWT_EXPECTED_ISSUER")
+	expectedAudience := os.Getenv("JWT_EXPECTED_AUDIENCE")
+	validAlgorithms := strings.Split(os.Getenv("JWT_VALID_ALGORITHMS"), ",")
+
+	if len(validAlgorithms) == 0 || validAlgorithms[0] == "" {
+		validAlgorithms = []string{"RS256"} // default
+	}
+
+	for i := range validAlgorithms {
+		validAlgorithms[i] = strings.TrimSpace(validAlgorithms[i])
+	}
+
+	opts := []jwt.ParserOption{
+		jwt.WithValidMethods(validAlgorithms),
+		jwt.WithIssuer(expectedIssuer),
+	}
+	for _, aud := range strings.Split(expectedAudience, ",") {
+		opts = append(opts, jwt.WithAudience(strings.TrimSpace(aud)))
+	}
+
+	parsedToken, err := jwt.Parse(tokenString, keyfunc, opts...)
+
 	if err != nil {
+		log.Printf("JWT parsing failed: %v", err)
 		return false, err
 	}
+
 	if !parsedToken.Valid {
+		log.Printf("JWT token is invalid")
 		return false, errors.New("JWT token is invalid")
 	}
 

@@ -8,9 +8,42 @@ import (
 	"log"
 )
 
-// ParseMQTTConnect parses a raw MQTT CONNECT packet and returns the username and password (JWT)
-func ParseMQTTConnect(packet []byte) (string, string, error) {
-	const connectPacketType = 0x10
+const (
+	connectPacketType   = 0x10
+	maxConnectPacketSize = 1024 * 2 // 2KB
+)
+
+// ParseConnect determines the protocol type (mqtt, raw) and delegates parsing
+func ParseConnect(packet []byte) (protocol string, username string, token string, err error) {
+	if isMQTTConnect(packet) {
+		username, token, err := parseMQTTConnect(packet)
+		return "mqtt", username, token, err
+	}
+	// fallback
+	return "raw", "", "", nil
+}
+
+// isMQTTConnect does a minimal check to detect MQTT CONNECT packets
+func isMQTTConnect(packet []byte) bool {
+	if len(packet) < 2 || len(packet) > maxConnectPacketSize {
+		return false
+	}
+	if packet[0] != connectPacketType {
+		return false
+	}
+	_, fixedHeaderLen := decodeVariableLength(packet[1:])
+	buf := bytes.NewReader(packet[1+fixedHeaderLen:])
+
+	protoName, err := readUTF8String(buf)
+	return err == nil && protoName == "MQTT"
+}
+
+// ParseConnect parses a raw MQTT CONNECT packet and returns the username and password (JWT)
+// This function is meant to be used at the boundary where a WebSocket upgrade has completed
+func parseMQTTConnect(packet []byte) (string, string, error) {
+	if len(packet) > maxConnectPacketSize {
+		return "", "", errors.New("CONNECT packet too large")
+	}
 
 	if len(packet) < 2 {
 		return "", "", errors.New("packet too short")
@@ -53,7 +86,6 @@ func ParseMQTTConnect(packet []byte) (string, string, error) {
 	}
 
 	log.Printf("Received MQTT %s CONNECT", mqttVersion)
-
 
 	// Connect flags
 	connectFlags, err := buf.ReadByte()
@@ -114,6 +146,8 @@ func ParseMQTTConnect(packet []byte) (string, string, error) {
 	if password == "" {
 		return "", "", errors.New("password (JWT) missing")
 	}
+
+	log.Printf("Parsed CONNECT: username=%s, JWT length=%d", username, len(password))
 
 	return username, password, nil
 }
