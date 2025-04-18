@@ -1,4 +1,4 @@
-module github.com/mortdiggiddy/go-ws-gateway
+module github.com/mortdiggiddy/go-ws-gateway-proxy
 
 go 1.23.0
 

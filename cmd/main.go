@@ -14,9 +14,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/mortdiggiddy/go-ws-gateway/internal/auth"
-	"github.com/mortdiggiddy/go-ws-gateway/internal/mqtt"
-	"github.com/mortdiggiddy/go-ws-gateway/internal/proxy"
+	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/auth"
+	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/mqtt"
+	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/proxy"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
