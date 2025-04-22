@@ -28,6 +28,8 @@ spec:
               value: "{{ $v }}"
             {{- end }}
           envFrom:
+            - configMapRef:
+                name: {{ include "go-ws-gateway-proxy.fullname" . }}-config
             - secretRef:
                 name: {{ include "go-ws-gateway-proxy.fullname" . }}-secrets
           readinessProbe:

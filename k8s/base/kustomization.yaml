@@ -11,9 +11,14 @@ resources:
 configMapGenerator:
   - name: go-ws-gateway-proxy-config
     literals:
-      # single source of truth for your ingress host and CORS origins:
-      - INGRESS_HOST=ws-public-host-name.example.com
+      - INGRESS_HOST=ws-public-host-name.example.com 
       - WS_ALLOWED_ORIGINS=*.example.com # comma separated single string, replace with your allowed origins
+      - JWT_COOKIE_NAME=session
+      - GRACEFUL_DRAIN_TIMEOUT_SECONDS=30
+      - WS_IDLE_TIMEOUT_SECONDS=60
+      - WS_WRITE_TIMEOUT_SECONDS=10
+      - JWKS_URL=https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
+      - JWKS_TTL_MINUTES=10
 
 vars:
   - name: INGRESS_HOST

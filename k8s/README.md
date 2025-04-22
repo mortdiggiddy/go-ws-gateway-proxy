@@ -1,3 +1,15 @@
+# Overview
+
+This deployment package provisions the go-ws-gateway-proxy, a lightweight, high-performance WebSocket reverse proxy written in Go. It is designed to authenticate incoming WebSocket clients via JWT (e.g., from Keycloak), and forward valid connections to an upstream MQTT-over-WebSocket broker such as RabbitMQ. The proxy validates JWTs against a JWKS endpoint and enforces origin-level CORS restrictions.
+
+The proxy supports:
+
+- JWT-based access control
+- Connection draining with preStop hook
+- Exposed metrics for Prometheus
+- Structured logging for EFK stacks
+- TLS-terminated WebSocket connections via Traefik Ingress
+
 # go-ws-gateway-proxy Kubernetes Deployment
 
 This directory contains all of the Kubernetes manifests, Kustomize overlays, and a Helm chart needed to deploy the go-ws-gateway-proxy service at enterprise scale. You can choose between Kustomize (recommended for GitOps workflows) or Helm (for templated installs).
@@ -17,6 +29,42 @@ This directory contains all of the Kubernetes manifests, Kustomize overlays, and
 ---
 
 ## Directory Structure
+
+```bash
+k8s/
+├── base/
+│   ├── configmap.yaml
+│   ├── deployment.yaml
+│   ├── ingress.yaml
+│   ├── kustomization.yaml
+│   ├── secret.yaml
+│   └── service.yaml
+├── overlays/
+│   ├── staging/
+│   └── production/
+├── helm/
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── configmap.yaml
+│       ├── deployment.yaml
+│       ├── ingress.yaml
+│       ├── secret.yaml
+│       └── service.yaml
+```
+
+The `go-ws-gateway-proxy` deployment provisions the following Kubernetes resources:
+
+| Resource                         | Kind                        | Purpose                                                                                    |
+| -------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| 🧱 **Deployment**                | `apps/v1/Deployment`        | Runs the proxy with configurable replicas, resource limits, probes, and graceful shutdown. |
+| 🔌 **Service**                   | `v1/Service`                | Exposes the proxy internally on port `8080` using `ClusterIP`.                             |
+| 🌐 **Ingress**                   | `networking.k8s.io/Ingress` | Routes external TLS WebSocket traffic to the `/ws` endpoint (e.g., via Traefik).           |
+| ⚙️ **ConfigMap**                 | `v1/ConfigMap`              | Stores non-sensitive runtime configuration like CORS origins, timeouts, and JWKS URL.      |
+| 🔐 **Secret**                    | `v1/Secret`                 | Holds sensitive values such as JWT issuer/audience, Redis, Postgres, and upstream target.  |
+| ❤️ **Liveness/Readiness Probes** | HTTP `/healthz`             | Ensures the pod is started and serving traffic reliably.                                   |
+| 📊 **Metrics Endpoint**          | HTTP `/metrics`             | Exposes Prometheus-compatible metrics for observability.                                   |
+| ⏱ **Lifecycle Hook**             | `preStop` script            | Drains in-flight connections with a configurable timeout before pod termination.           |
 
 ---
 
@@ -45,6 +93,12 @@ Holds sensitive/runtime data:
 
 ## Deploy with Kustomize
 
+Recommended for GitOps-based workflows where manifests are declarative and managed through Git (e.g., Argo CD or Flux CD).
+
+- Encourages layering via overlays (e.g., staging/, production/)
+- No templating logic — strict YAML with reusable base
+- Secrets and ConfigMaps are managed as first-class citizens
+
 1. **Base deployment**
 
    ```bash
@@ -65,12 +119,19 @@ Holds sensitive/runtime data:
 
 ## Deploy With Helm
 
+Recommended for templated, parameter-driven installations, such as interactive CLI deploys, CI/CD pipelines, or when reusing charts across environments.
+
+- Enables dynamic configuration using values.yaml
+- Generates manifests using Go templating
+- Suitable for environments with variable parameters (e.g., different ingress hosts or JWKS URLs)
+
 1. **Install chart**
 
    ```bash
-   helm repo add myrepo https://your-repo.example.com/charts
-   helm install ws-proxy k8s/helm \
-        --values k8s/helm/values.yaml
+   # Install directly from local directory (no repo add needed)
+   helm install ws-proxy ./helm --values ./helm/values.yaml
+   # Optional: preview what Helm renders without applying
+   helm template ws-proxy ./helm --values ./helm/values.yaml
    ```
 
 2. **Upgrade chart**
@@ -123,8 +184,12 @@ Holds sensitive/runtime data:
 
 ```yaml
 - job_name: ws-proxy
-  static_configs:
-    - targets: ['<pod-ip>:8080']
+  kubernetes_sd_configs:
+    - role: pod
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_label_app]
+      action: keep
+      regex: go-ws-gateway-proxy
 ```
 
 ## Cleanup
