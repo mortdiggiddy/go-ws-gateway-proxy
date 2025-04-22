@@ -97,7 +97,7 @@ var upgrader = websocket.Upgrader{
 
 		for _, a := range allowed {
 			a = strings.TrimSpace(a)
-			// support wildcard suffix like *.ci.dfl.ae
+			// support wildcard suffix like *.example.com
 			if strings.HasPrefix(a, "*.") {
 				if strings.HasSuffix(origin, a[1:]) {
 					return true

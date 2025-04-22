@@ -1,0 +1,29 @@
+# ignore VCS metadata
+.git
+.gitignore
+
+# ignore local tools and IDE files
+.idea
+.vscode
+*.swp
+
+# build artifacts
+*.exe
+*.test
+bin/
+build/
+
+# editor backups
+*~
+
+# dependency directories you don’t need
+node_modules/
+vendor/
+
+# Kubernetes manifests, docs, etc.
+k8s/
+helm/
+README.md
+
+# anything else you don’t need in the build context
+.DS_Store
