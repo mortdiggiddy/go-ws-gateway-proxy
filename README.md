@@ -120,6 +120,12 @@ This creates a **security envelope** on top of the WebSocket protocol, even when
 └── README.md
 ```
 
+## Architecture
+
+![Basic JWT Proxy Flow](public/go-ws-gateway-1.png)
+
+![Ingress-Traefik Deployment Flow](public/go-ws-gateway-2.png)
+
 ---
 
 ## 🐳 Running with Docker
