@@ -81,14 +81,54 @@ This creates a **security envelope** on top of the WebSocket protocol, even when
 - Binary or text preserved
 - Keeps native framing (e.g., MQTT control packets)
 
+### ✅ Rate Limiting
+
+The gateway supports **optional message-level rate limiting** on all active WebSocket connections. This protects against abusive clients, ensures system fairness, and enforces resource boundaries.
+
+- **Configuration:**
+
+  - `RATE_LIMIT_PER_SECOND`: Maximum sustained message rate (refill rate of the token bucket)
+  - `RATE_LIMIT_BURST`: Maximum burst capacity (number of messages allowed in a short burst)
+
+- **Behavior:**
+
+  - Enforced using Go’s token bucket algorithm (`golang.org/x/time/rate`)
+  - On violation, the gateway sends a standards-compliant control frame:
+    ```http
+    WebSocket Close Code: 1008 (Policy Violation)
+    Reason: Rate limit exceeded
+    ```
+  - The connection is then closed gracefully
+
+- **Identity-aware enforcement:**
+
+  - For authenticated clients, rate limits are enforced **per JWT subject (`sub`)**
+  - For anonymous clients, fallback to **IP address-based limiting**
+  - Ensures shared rate control across all concurrent sessions from the same user or client
+
+- **Distributed enforcement via Redis:**
+  - When `REDIS_URL` is set, rate limits are enforced across instances using a Redis-backed counter (with 1-second fixed windows)
+  - Lua scripting ensures atomicity and correct TTL behavior under load
+  - Fallbacks to in-memory limits if Redis is unavailable
+
 ### 📈 Prometheus Metrics
 
-| Metric                                          | Description                         |
-| ----------------------------------------------- | ----------------------------------- |
-| `ws_total_connections`                          | Total client upgrades attempted     |
-| `ws_auth_failures_total`                        | Count of invalid or expired JWTs    |
-| `ws_auth_success_total{sub,preferred_username}` | Successful authentications per user |
-| `ws_active_sessions`                            | Live connection count               |
+📈 Prometheus Metrics
+
+| Metric                                          | Description                                                    |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| `ws_connections_total`                          | Total number of WebSocket connections attempted                |
+| `ws_auth_failures_total`                        | Count of invalid, expired, or malformed JWTs                   |
+| `ws_auth_success_total{sub,preferred_username}` | Successful JWT authentications labeled by subject and username |
+| `ws_active_sessions`                            | Currently active WebSocket proxy sessions                      |
+| `ws_connection_duration_seconds`                | Histogram of WebSocket session lifetimes (seconds)             |
+| `ws_protocol_connections_total{protocol}`       | Total connection count by protocol type (`mqtt`, `raw`, etc.)  |
+| `ws_proxy_errors_total{protocol}`               | Total proxy-level failures during streaming                    |
+| `ws_proxy_retries_total{protocol}`              | Count of upstream reconnect attempts during proxying           |
+| `ws_circuit_open_total{protocol}`               | Count of circuit breaker open events per protocol              |
+| `ws_upstream_health_success_total`              | Successful upstream health check responses                     |
+| `ws_upstream_health_failure_total`              | Failed upstream health check responses                         |
+| `ws_rate_limit_violations_total`                | Number of rate limit violations                                |
 
 ### ✅ Traefik- and K8s-Friendly
 

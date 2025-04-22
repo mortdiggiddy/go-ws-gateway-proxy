@@ -4,18 +4,21 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/protocol"
+	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/ratelimit"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/utils"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/time/rate"
 )
 
 type ctxKey string
@@ -52,6 +55,13 @@ var (
 			Help: "Total failed upstream health checks",
 		},
 	)
+	rateLimitViolations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ws_rate_limit_violations_total",
+			Help: "Total number of rate limit violations",
+		},
+		[]string{"key"},
+	)
 )
 
 // Circuit breaker state
@@ -70,8 +80,28 @@ var (
 	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
 )
 
+var sharedRedisLimiter ratelimit.RateLimiter
+var once sync.Once
+
 func init() {
-	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail)
+	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail, rateLimitViolations)
+
+	once.Do(func() {
+		perSecond := utils.GetEnvInt("RATE_LIMIT_PER_SECOND", 10)
+		burst := utils.GetEnvInt("RATE_LIMIT_BURST", 30)
+
+		if redisURL := utils.GetEnv("REDIS_URL"); redisURL != "" {
+			opt, err := redis.ParseURL(redisURL)
+			if err == nil {
+				client := redis.NewClient(opt)
+				sharedRedisLimiter = ratelimit.NewRedisRateLimiter(client, burst, "wsrl")
+			}
+		}
+		if sharedRedisLimiter == nil {
+			sharedRedisLimiter = ratelimit.NewLocalRateLimiter(perSecond, burst)
+		}
+	})
+
 	go upstreamHealthCheck()
 }
 
@@ -83,7 +113,7 @@ func init() {
 // EMQX
 // Mosquitto with WebSocket bridge
 // Any custom WebSocket target
-func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Request, proto string, jwtToken string, roles []string) error {
+func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Request, proto string, jwtToken string, claims jwt.MapClaims, roles []string) error {
 	connID := uuid.NewString()
 	ctx := context.WithValue(req.Context(), ctxKeyConnID, connID)
 
@@ -96,10 +126,16 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		return fmt.Errorf("upstream circuit open, refusing connection")
 	}
 
-	limiter := rate.NewLimiter(
-		rate.Limit(utils.GetEnvInt("RATE_LIMIT_PER_SECOND", 10)), // messages/sec
-		utils.GetEnvInt("RATE_LIMIT_BURST", 20),                  // burst capacity
-	)
+	// build per-client rate limiter
+	limiter := sharedRedisLimiter
+
+	// derive clientKey = IP:connectionID
+	ip, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
+		ip = req.RemoteAddr
+	}
+	// clientKey := fmt.Sprintf("%s:%s", ip, connID)
+	clientKey := getRateLimitKey(ip, claims)
 
 	// MQTT‑5 Role Injection
 	if proto == "mqtt" {
@@ -241,7 +277,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		for {
 
 			// rate limit incoming client frames
-			if !limiter.Allow() {
+			if !limiter.Allow(clientKey) {
 				clientWriteMu.Lock()
 				clientConn.SetWriteDeadline(time.Now().Add(writeTimeout))
 				clientConn.WriteControl(
@@ -250,9 +286,13 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 					time.Now().Add(writeTimeout),
 				)
 				clientWriteMu.Unlock()
-				errChan <- fmt.Errorf("rate limit exceeded by client")
+
+				rateLimitViolations.WithLabelValues(clientKey).Inc()
+				errChan <- fmt.Errorf("rate limit exceeded for %s", clientKey)
 				return
 			}
+
+			// set read deadline to catch idle clients
 
 			clientConn.SetReadDeadline(time.Now().Add(idleTimeout)) // configurable if needed
 			mt, msg, rerr := clientConn.ReadMessage()
@@ -431,4 +471,11 @@ func connIDFrom(ctx context.Context) string {
 		return v.(string)
 	}
 	return "unknown"
+}
+
+func getRateLimitKey(ip string, claims jwt.MapClaims) string {
+	if sub := utils.GetClaim(claims, "sub"); sub != "unknown" {
+		return sub
+	}
+	return ip
 }

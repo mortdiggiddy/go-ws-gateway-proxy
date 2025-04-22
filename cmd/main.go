@@ -339,7 +339,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Proxy traffic to backend
-	if err := proxy.ProxyWebSocket(conn, packet, r, proto, jwtToken, roles); err != nil {
+	if err := proxy.ProxyWebSocket(conn, packet, r, proto, jwtToken, claims, roles); err != nil {
 		proxyErrors.WithLabelValues(proto).Inc()
 		log.Println("Proxying failed:", err)
 	}
