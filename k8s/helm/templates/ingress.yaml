@@ -1,0 +1,31 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "go-ws-gateway-proxy.fullname" . }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.ingress.host }}`) && Path(`{{ .Values.ingress.path }}`)
+      kind: Rule
+      services:
+        - name: {{ include "go-ws-gateway-proxy.fullname" . }}
+          port: {{ .Values.service.port }}
+  tls:
+    certResolver: letsencrypt
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "go-ws-gateway-proxy.fullname" . }}-cors
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - "{{ .Values.ingress.allowedOrigins }}"
+    accessControlAllowCredentials: true
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+{{- end }}

@@ -1,0 +1,7 @@
+1. Get the application URL by running:
+
+   kubectl get ingressroute/{{ include "go-ws-gateway-proxy.fullname" . }}
+
+2. port-forward for local testing:
+
+   kubectl port-forward svc/{{ include "go-ws-gateway-proxy.fullname" . }} 8080:80

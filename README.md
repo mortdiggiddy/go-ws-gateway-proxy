@@ -66,7 +66,7 @@ The gateway uses a lightweight parser to autodetect the protocol:
 protocol, username, token, err := ParseConnect(packet)
 ```
 
-### ✅ Secure JWT Validation
+### 🛡️ Secure JWT Validation
 
 - JWTs extracted from MQTT `password` or raw WS payload
 - Validated using JWKS from Keycloak (or any OIDC-compliant provider)
@@ -81,7 +81,7 @@ This creates a **security envelope** on top of the WebSocket protocol, even when
 - Binary or text preserved
 - Keeps native framing (e.g., MQTT control packets)
 
-### ✅ Prometheus Metrics
+### 📈 Prometheus Metrics
 
 | Metric                                          | Description                         |
 | ----------------------------------------------- | ----------------------------------- |
@@ -142,6 +142,12 @@ RAW_WS_BACKEND_URL=ws://backend-service:8081/raw
 ```
 
 ### Step 2: Run Docker
+
+First time only:
+
+```bash
+chmod +x scripts/docker_run.sh
+```
 
 Use the provided script:
 

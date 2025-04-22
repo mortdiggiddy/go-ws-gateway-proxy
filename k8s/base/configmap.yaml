@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-ws-gateway-proxy-config
+data:
+  WS_ALLOWED_ORIGINS: '*.example.com' # comma separated single string
+  JWT_COOKIE_NAME: 'session'
+  GRACEFUL_DRAIN_TIMEOUT_SECONDS: '30'
+  WS_IDLE_TIMEOUT_SECONDS: '60'
+  WS_WRITE_TIMEOUT_SECONDS: '10'
+  JWKS_URL: 'https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs'
+  JWKS_TTL_MINUTES: '10'

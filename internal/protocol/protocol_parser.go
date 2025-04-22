@@ -1,4 +1,4 @@
-package mqtt
+package protocol
 
 import (
 	"bytes"
@@ -6,21 +6,37 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 )
 
 const (
 	connectPacketType   = 0x10
 	maxConnectPacketSize = 1024 * 2 // 2KB
+	protoNameExpected = "MQTT"
+    mqtt5Level        = 5
 )
 
 // ParseConnect determines the protocol type (mqtt, raw) and delegates parsing
-func ParseConnect(packet []byte) (protocol string, username string, token string, err error) {
+func ParseConnect(packet []byte, r *http.Request) (protocol string, username string, jwtToken string, err error) {
 	if isMQTTConnect(packet) {
-		username, token, err := parseMQTTConnect(packet)
-		return "mqtt", username, token, err
+		username, jwtToken, err := parseMQTTConnect(packet)
+		return "mqtt", username, jwtToken, err
 	}
-	// fallback
-	return "raw", "", "", nil
+	
+	// Raw WebSocket client detected, extract JWT from headers or query param
+	var token string
+	authHeader := r.Header.Get("Authorization")
+
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+
+	return "raw", "", token, nil 
 }
 
 // isMQTTConnect does a minimal check to detect MQTT CONNECT packets

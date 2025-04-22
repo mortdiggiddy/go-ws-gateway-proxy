@@ -1,0 +1,11 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-ws-gateway-proxy
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: proxy
+          image: your-registry/go-ws-gateway-proxy:prod

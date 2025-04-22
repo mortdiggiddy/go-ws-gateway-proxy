@@ -1,0 +1,36 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: go-ws-gateway-proxy
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`$(INGRESS_HOST)`) && Path(`/ws`) # replace with your exposed host
+      kind: Rule
+      services:
+        - name: go-ws-gateway-proxy
+          port: 80
+      middlewares:
+        - name: ws-cors
+  tls:
+    certResolver: letsencrypt
+
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: ws-cors
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - '$(WS_ALLOWED_ORIGINS)' # comma separated single string, replace with your allowed origins
+    accessControlAllowCredentials: true
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - OPTIONS
+      - GET
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
