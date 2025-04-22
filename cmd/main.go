@@ -187,8 +187,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	totalConnections.Inc()
-	protocolConnections.WithLabelValues(r.URL.Path /* placeholder, replaced later */).Inc() // update label when protocol known
-
 	activeSessions.Inc()
 	defer activeSessions.Dec()
 
@@ -245,6 +243,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// record by real protocol
 	protocolConnections.WithLabelValues(proto).Inc()
 
 	// Decode JWT claims before validation

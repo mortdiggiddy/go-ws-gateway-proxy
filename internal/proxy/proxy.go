@@ -15,6 +15,7 @@ import (
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/protocol"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/utils"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/time/rate"
 )
 
 type ctxKey string
@@ -55,30 +56,24 @@ var (
 
 // Circuit breaker state
 var (
-	cbFailureCount  int
-	cbOpenUntil     time.Time
-	cbMutex         sync.Mutex
-	clientWriteMu   sync.Mutex
-	upstreamReadMu  sync.Mutex
-	upstreamWriteMu sync.Mutex
-
+	cbFailureCount    int
+	cbOpenUntil       time.Time
+	cbMutex           sync.Mutex
 	cbThreshold       = utils.GetEnvInt("CB_FAILURE_THRESHOLD", 5)                                          // failures to open circuit
 	cbOpenDuration    = time.Duration(utils.GetEnvInt("CB_OPEN_TIMEOUT_SECONDS", 60)) * time.Second         // open duration
 	cbHealthInterval  = time.Duration(utils.GetEnvInt("CB_HEALTHCHECK_INTERVAL_SECONDS", 30)) * time.Second // health check interval
 	dialRetryMax      = utils.GetEnvInt("WS_DIAL_RETRY_MAX", 3)                                             // dial retry count
 	dialRetryInterval = time.Duration(utils.GetEnvInt("WS_DIAL_RETRY_INTERVAL_SECONDS", 2)) * time.Second   // retry backoff
+
+	upstreamWSURL = utils.GetEnv("UPSTREAM_WS_URL")
+	writeTimeout  = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
+	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
 )
 
 func init() {
 	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail)
 	go upstreamHealthCheck()
 }
-
-var (
-	upstreamWSURL = utils.GetEnv("UPSTREAM_WS_URL")
-	writeTimeout  = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
-	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
-)
 
 // ProxyWebSocket streams traffic between clientConn and an upstream WebSocket server
 // This function is the lifetime of a single proxy session between a client and an
@@ -92,10 +87,19 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 	connID := uuid.NewString()
 	ctx := context.WithValue(req.Context(), ctxKeyConnID, connID)
 
+	var clientWriteMu sync.Mutex
+	var upstreamReadMu sync.Mutex
+	var upstreamWriteMu sync.Mutex
+
 	if isCircuitOpen(proto) {
 		log.Printf("[proxy] circuit open for protocol=%s; refusing connection", proto)
 		return fmt.Errorf("upstream circuit open, refusing connection")
 	}
+
+	limiter := rate.NewLimiter(
+		rate.Limit(utils.GetEnvInt("RATE_LIMIT_PER_SECOND", 10)), // messages/sec
+		utils.GetEnvInt("RATE_LIMIT_BURST", 20),                  // burst capacity
+	)
 
 	// MQTT‑5 Role Injection
 	if proto == "mqtt" {
@@ -235,12 +239,27 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 	// You don’t need explicit “session affinity” for an established socket.
 	go func() {
 		for {
-			// Optional: set read deadline to detect idle clients
+
+			// rate limit incoming client frames
+			if !limiter.Allow() {
+				clientWriteMu.Lock()
+				clientConn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				clientConn.WriteControl(
+					websocket.CloseMessage,
+					websocket.FormatCloseMessage(1008, "Rate limit exceeded"),
+					time.Now().Add(writeTimeout),
+				)
+				clientWriteMu.Unlock()
+				errChan <- fmt.Errorf("rate limit exceeded by client")
+				return
+			}
+
 			clientConn.SetReadDeadline(time.Now().Add(idleTimeout)) // configurable if needed
 			mt, msg, rerr := clientConn.ReadMessage()
+
 			if rerr != nil {
 				log.Printf("[proxy] client read error: %v", rerr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -255,7 +274,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			if werr != nil {
 				log.Printf("[proxy] forward to upstream failed: %v", werr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -276,7 +295,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			if rerr != nil {
 				log.Printf("[proxy] upstream read error: %v", rerr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -311,7 +330,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 }
 
 // Attempts to dial a fresh upstream and swap it in place
-func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr http.Header, proto string) bool {
+func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr http.Header, proto string, upstreamReadMu *sync.Mutex, upstreamWriteMu *sync.Mutex) bool {
 	if isCircuitOpen(proto) {
 		return false
 	}
@@ -332,7 +351,8 @@ func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr htt
 			time.Sleep(dialRetryInterval)
 			continue
 		}
-		// *** lock out both readers and writers while swapping ***
+
+		// lock both readers and writers while swapping
 		upstreamReadMu.Lock()
 		upstreamWriteMu.Lock()
 		(*connPtr).Close()

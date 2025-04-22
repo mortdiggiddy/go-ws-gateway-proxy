@@ -51,7 +51,12 @@ func getJWKS(ctx context.Context) (jwk.Set, error) {
 
 	set, err := jwk.Fetch(ctx, jwksURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
+		log.Printf("warning: failed to fetch JWKS from %q: %v", jwksURL, err)
+		// fallback to last‑good cache if available
+		if jwksCache != nil {
+			return jwksCache, nil
+		}
+		return nil, fmt.Errorf("no JWKS cache available and fetch failed: %w", err)
 	}
 
 	jwksCache = set

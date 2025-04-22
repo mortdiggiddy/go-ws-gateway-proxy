@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: go-ws-gateway-proxy-config
+data:
+  WS_IDLE_TIMEOUT_SECONDS: "45" # shorter idle timeout in staging
+  RATE_LIMIT_PER_SECOND: "5" # lower rate‐limit to simulate load
+  RATE_LIMIT_BURST: "10"

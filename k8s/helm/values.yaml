@@ -16,7 +16,7 @@ ingress:
   host: ws-public-host-name.example.com
   # ─── single source of truth for CORS/allowed origins ───
   # used in the CORS middleware
-  allowedOrigins: '*.example.com'
+  allowedOrigins: "*.example.com"
   tls:
     secretName: tls-secret
 
@@ -29,18 +29,26 @@ resources:
     memory: 512Mi
 
 env: # Projected into ConfigMap
-  WS_ALLOWED_ORIGINS: '*.example.com'
-  JWT_COOKIE_NAME: 'session'
-  GRACEFUL_DRAIN_TIMEOUT_SECONDS: '30'
-  WS_IDLE_TIMEOUT_SECONDS: '60'
-  WS_WRITE_TIMEOUT_SECONDS: '10'
-  JWKS_URL: 'https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs'
-  JWKS_TTL_MINUTES: '10'
+  WS_ALLOWED_ORIGINS: "*.example.com"
+  JWT_COOKIE_NAME: "session"
+  GRACEFUL_DRAIN_TIMEOUT_SECONDS: "30"
+  WS_IDLE_TIMEOUT_SECONDS: "60"
+  WS_WRITE_TIMEOUT_SECONDS: "10"
+  WS_CONTROL_TIMEOUT_SECONDS: "1"
+  CB_FAILURE_THRESHOLD: "5"
+  CB_OPEN_TIMEOUT_SECONDS: "60"
+  CB_HEALTHCHECK_INTERVAL_SECONDS: "30"
+  WS_DIAL_RETRY_MAX: "3"
+  WS_DIAL_RETRY_INTERVAL_SECONDS: "2"
+  RATE_LIMIT_PER_SECOND: "10"
+  RATE_LIMIT_BURST: "30"
+  JWKS_URL: "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
+  JWKS_TTL_MINUTES: "10"
 
 secrets: # Projected into Kubernetes Secret
-  JWT_EXPECTED_ISSUER: ''
-  JWT_EXPECTED_AUDIENCE: ''
-  JWT_VALID_ALGORITHMS: 'RS256'
-  REDIS_URL: ''
-  POSTGRES_DSN: ''
-  UPSTREAM_WS_URL: 'ws://rabbitmq:15675/ws'
+  JWT_EXPECTED_ISSUER: "https://keycloak.example.com/realms/myrealm"
+  JWT_EXPECTED_AUDIENCE: "rabbitmq"
+  JWT_VALID_ALGORITHMS: "RS256"
+  REDIS_URL: ""
+  POSTGRES_DSN: ""
+  UPSTREAM_WS_URL: "ws://rabbitmq:15675/ws"

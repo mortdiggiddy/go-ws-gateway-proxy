@@ -148,10 +148,11 @@ func (p *postgresCache) Get(ctx context.Context, key string) (bool, error) {
 func (p *postgresCache) Set(ctx context.Context, key string, ttl time.Duration) error {
 	realKey := cachePrefix + key
 	exp := time.Now().Add(ttl)
-	// *** upsert expiration ***
+	// upsert expiration correctly
 	_, err := p.db.ExecContext(ctx, `
-        INSERT INTO jwt_cache(key, expires) VALUES($1, $2)
-        ON CONFLICT (key) DO UPDATE SET expires = EXCLUDED.expires`, realKey, exp)
+           INSERT INTO jwt_cache (key, expires) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET expires = EXCLUDED.expires
+       `, realKey, exp)
 	return err
 }
 
