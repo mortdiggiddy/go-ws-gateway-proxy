@@ -129,6 +129,19 @@ func (r *redisCache) Set(ctx context.Context, key string, ttl time.Duration) err
 // postgresCache stores expiration timestamps in a Postgres table
 type postgresCache struct{ db *sql.DB }
 
+// TODO(postgresCache): Expired key cleanup strategy
+//
+// Currently, expired JWT cache entries in Postgres are only removed during `Get()` calls.
+// This lazy deletion strategy can lead to unbounded table growth in high-throughput environments.
+//
+// ✅ Works correctly per access, avoids expired reuse
+// ❌ Expired keys remain until manually accessed
+//
+// Possible solutions:
+// - [ ] Schedule periodic cleanup: `DELETE FROM jwt_cache WHERE expires < now()`
+// - [ ] Add index on expires: `CREATE INDEX idx_jwt_cache_expires ON jwt_cache (expires);`
+// - [ ] Use pg_cron or external job scheduler for TTL purging
+// - [ ] Consider switching to Redis for native TTL support in volatile cache environments
 func (p *postgresCache) Get(ctx context.Context, key string) (bool, error) {
 	realKey := cachePrefix + key
 	var exp time.Time
