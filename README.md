@@ -140,8 +140,6 @@ The gateway supports **optional message-level rate limiting** on all active WebS
 
 ### 📈 Prometheus Metrics
 
-📈 Prometheus Metrics
-
 | Metric                                          | Description                                                    |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | `ws_connections_total`                          | Total number of WebSocket connections attempted                |
@@ -252,6 +250,67 @@ docker run --rm \
 
 ---
 
+## 🔧 Configuration Options
+
+| Env Var                          | Purpose                                                           | Default                  |
+| -------------------------------- | ----------------------------------------------------------------- | ------------------------ |
+| `INGRESS_HOST`                   | Public hostname used by the Ingress or Traefik proxy              | —                        |
+| `WS_ALLOWED_ORIGINS`             | Comma-separated list or wildcard of allowed WebSocket origins     | value of `Origin` header |
+| `JWT_COOKIE_NAME`                | Cookie name to extract JWT from if not provided in CONNECT/header | `session`                |
+| `GRACEFUL_DRAIN_TIMEOUT_SECONDS` | Max time to wait for active connections to finish on SIGTERM      | `30`                     |
+
+### 🔐 JWT / OIDC Authentication
+
+| Env Var                 | Purpose                                                       | Default |
+| ----------------------- | ------------------------------------------------------------- | ------- |
+| `JWKS_URL`              | OIDC-compliant JWKS endpoint for token signature verification | —       |
+| `JWKS_TTL_MINUTES`      | Duration to cache the JWKS before refetching                  | `10`    |
+| `JWT_EXPECTED_ISSUER`   | Issuer claim expected in JWTs                                 | —       |
+| `JWT_EXPECTED_AUDIENCE` | Comma-separated list of valid audience values                 | —       |
+| `JWT_VALID_ALGORITHMS`  | Comma-separated list of allowed JWT algorithms                | `RS256` |
+
+### 🔄 Timeouts
+
+| Env Var                      | Purpose                                                | Default |
+| ---------------------------- | ------------------------------------------------------ | ------- |
+| `WS_IDLE_TIMEOUT_SECONDS`    | Max time a connection can remain idle before closure   | `60`    |
+| `WS_WRITE_TIMEOUT_SECONDS`   | Max duration for outbound WebSocket writes             | `10`    |
+| `WS_CONTROL_TIMEOUT_SECONDS` | Timeout for sending control frames (e.g. close frames) | `1`     |
+
+### 🧯 Circuit Breaker
+
+| Env Var                           | Purpose                                                 | Default |
+| --------------------------------- | ------------------------------------------------------- | ------- |
+| `CB_FAILURE_THRESHOLD`            | Consecutive failures before opening the circuit         | `5`     |
+| `CB_OPEN_TIMEOUT_SECONDS`         | Time the circuit remains open before retry is attempted | `60`    |
+| `CB_HEALTHCHECK_INTERVAL_SECONDS` | Interval to probe upstream and possibly close circuit   | `30`    |
+
+### 🔁 Upstream Connection (Backend)
+
+| Env Var                          | Purpose                                                  | Default                  |
+| -------------------------------- | -------------------------------------------------------- | ------------------------ |
+| `UPSTREAM_WS_URL`                | Target WebSocket endpoint (e.g. RabbitMQ MQTT-over-WS)   | `ws://rabbitmq:15675/ws` |
+| `WS_DIAL_RETRY_MAX`              | Number of times to retry dialing the upstream on failure | `3`                      |
+| `WS_DIAL_RETRY_INTERVAL_SECONDS` | Delay between retry attempts                             | `2`                      |
+
+### 🚦 Rate Limiting
+
+| Env Var                 | Purpose                                                          | Default |
+| ----------------------- | ---------------------------------------------------------------- | ------- |
+| `RATE_LIMIT_PER_SECOND` | Allowed number of messages per second (token bucket refill rate) | `10`    |
+| `RATE_LIMIT_BURST`      | Allowed burst size before throttling                             | `30`    |
+
+### 🧠 JWT Cache (Token Replay Prevention)
+
+| Env Var            | Purpose                                                | Default             |
+| ------------------ | ------------------------------------------------------ | ------------------- |
+| `JWT_CACHE_STORE`  | Cache backend: `memory`, `redis`, or `postgres`        | `memory`            |
+| `JWT_CACHE_PREFIX` | Prefix for keys in Redis/Postgres cache                | `jwt_cached_token_` |
+| `REDIS_URL`        | Redis connection URL (e.g. `redis://localhost:6379/0`) | —                   |
+| `POSTGRES_DSN`     | DSN for Postgres cache backend                         | —                   |
+
+---
+
 ## 🔮 Future Enhancements
 
 ### 🔀 Multi-Upstream Routing
@@ -259,27 +318,29 @@ docker run --rm \
 - Load balance or route by `sub`, `claims`, or protocol
 - Separate fleets of robots or services
 - Support for sticky sessions by token hash
+- ⚠️ _Note_: Current implementation limits per `sub` or IP to prevent abuse, **but does not prevent JWT replay across clients**. Full replay prevention would require `jti` tracking and token revocation lists.
 
 ### 📡 Backpressure & Rate Limiting
 
 - Queue-aware outbound flow control
-- Burst protection by identity (`sub`)
+- Global rate limiting using Redis across all replicas
+
+### 🔐 Replay Protection & Token Lifecycle Management
+
+- Detect and reject reuse of the same JWT across multiple clients (replay)
+- Store `jti` (JWT ID) in Redis or Postgres to:
+  - Track which tokens have already been used
+  - Enforce one-time-use policies for high-sensitivity operations
+  - Support short-lived tokens with strict replay protection windows
+- Optional expiration strategy (TTL-based or revocation list)
+- Enable real-time invalidation of compromised tokens
+- Integrate with token revocation events from upstream identity providers
 
 ### 🔑 Token Introspection Support
 
 - Fallback to OAuth2 `introspection_endpoint`
 - For short-lived, reference-based tokens
-
----
-
-## 🔧 Configuration Options
-
-| Env Var                   | Purpose                     | Default                   |
-| ------------------------- | --------------------------- | ------------------------- |
-| `JWKS_URL`                | URL for JWKS discovery      | —                         |
-| `WS_IDLE_TIMEOUT_SECONDS` | Idle timeout per connection | `60`                      |
-| `UPSTREAM_WS_URL`         | MQTT-over-WS backend        | `ws://rabbitmq:15675/ws`  |
-| `RAW_WS_BACKEND_URL`      | Raw WebSocket backend       | `ws://localhost:8081/raw` |
+- Allows real-time token validity checks without relying on signature verification alone
 
 ---
 
@@ -291,7 +352,7 @@ Pull requests, issues, and discussions are welcome. Contributions should maintai
 
 ## 📝 License
 
-MIT License © 2024 — go-ws-gateway-proxy authors
+MIT License © 2024 — go-ws-gateway-proxy mortdiggiddy
 
 ---
 
