@@ -18,9 +18,9 @@ import (
 var (
 	// *** changed: read from environment variable with fallback ***
 	jwksURL = utils.GetEnv(
-        "JWKS_URL",
-        "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs",
-    )
+		"JWKS_URL",
+		"https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs",
+	)
 
 	jwksCache     jwk.Set
 	jwksLastFetch time.Time
@@ -41,7 +41,7 @@ func getJWKS(ctx context.Context) (jwk.Set, error) {
 
 	jwksMutex.RUnlock()
 
-	jwksMutex.Lock() // only one writer
+	jwksMutex.Lock()         // only one writer
 	defer jwksMutex.Unlock() // always release
 
 	// Double-check after acquiring write lock
@@ -67,10 +67,10 @@ func VerifyJWT(ctx context.Context, tokenString string, claims jwt.MapClaims) (b
 	key, keyErr := extractCacheKeyFromClaims(claims)
 
 	if keyErr == nil {
-        if found, err := tokenCache.Get(ctx, key); err == nil && found {
-            return true, nil // cached valid token
-        }
-    }
+		if found, err := tokenCache.Get(ctx, key); err == nil && found {
+			return true, nil // cached valid token
+		}
+	}
 
 	set, err := getJWKS(ctx)
 	if err != nil {
@@ -127,46 +127,46 @@ func VerifyJWT(ctx context.Context, tokenString string, claims jwt.MapClaims) (b
 	}
 
 	var ttl time.Duration
-    if expVal, exists := claims["exp"]; exists {
-        switch v := expVal.(type) {
-        case float64:
-            expTime := time.Unix(int64(v), 0)
-            ttl = time.Until(expTime)  // staticcheck compliant 
-        case json.Number:
-            if iv, err := v.Int64(); err == nil {
-                expTime := time.Unix(iv, 0)
-                ttl = time.Until(expTime)
-            }
-        }
-    }
-	
-    // fallback TTL if parsing failed or expired 
-    if ttl <= 0 {
-        ttl = 5 * time.Minute
-    }
+	if expVal, exists := claims["exp"]; exists {
+		switch v := expVal.(type) {
+		case float64:
+			expTime := time.Unix(int64(v), 0)
+			ttl = time.Until(expTime) // staticcheck compliant
+		case json.Number:
+			if iv, err := v.Int64(); err == nil {
+				expTime := time.Unix(iv, 0)
+				ttl = time.Until(expTime)
+			}
+		}
+	}
 
-    tokenCache.Set(ctx, key, ttl) // store in cache
+	// fallback TTL if parsing failed or expired
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+
+	tokenCache.Set(ctx, key, ttl) // store in cache
 
 	return true, nil
 }
 
 // extractCacheKey builds a cache key combining sub and jti when available, reusing pre-unmarshaled claims
 func extractCacheKeyFromClaims(claims jwt.MapClaims) (string, error) {
-    sub := utils.GetClaim(claims, "sub")
+	sub := utils.GetClaim(claims, "sub")
 	jti := utils.GetClaim(claims, "jti")
 
-    // combine sub and jti
-    if sub != "" && jti != "" {
-        return fmt.Sprintf("%s:%s", sub, jti), nil 
-    }
+	// combine sub and jti
+	if sub != "" && jti != "" {
+		return fmt.Sprintf("%s:%s", sub, jti), nil
+	}
 
-    if jti != "" {
-        return jti, nil // fallback to jti alone
-    }
+	if jti != "" {
+		return jti, nil // fallback to jti alone
+	}
 
-    if sub != "" {
-        return sub, nil // fallback to sub alone
-    }
+	if sub != "" {
+		return sub, nil // fallback to sub alone
+	}
 
-    return "", fmt.Errorf("no sub or jti claim")
+	return "", fmt.Errorf("no sub or jti claim")
 }

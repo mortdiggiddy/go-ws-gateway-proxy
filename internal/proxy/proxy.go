@@ -18,69 +18,70 @@ import (
 )
 
 type ctxKey string
+
 const ctxKeyConnID ctxKey = "conn_id"
 
 var (
-    // retry attempts per protocol
-    proxyRetries = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "ws_proxy_retries_total",
-            Help: "Total number of upstream reconnect attempts by protocol",
-        },
-        []string{"protocol"},
-    )
-    // circuit opens per protocol
-    circuitOpenCount = prometheus.NewCounterVec(        // *** made into CounterVec ***
-        prometheus.CounterOpts{
-            Name: "ws_circuit_open_total",
-            Help: "Total number of times circuit breaker opened by protocol",
-        },
-        []string{"protocol"},                           // ***
-    )
-    // health check successes and failures
-    healthSuccess = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "ws_upstream_health_success_total",   // ***
-            Help: "Total successful upstream health checks",
-        },
-    )
-    healthFail = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "ws_upstream_health_failure_total",   // ***
-            Help: "Total failed upstream health checks",
-        },
-    )
+	// retry attempts per protocol
+	proxyRetries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ws_proxy_retries_total",
+			Help: "Total number of upstream reconnect attempts by protocol",
+		},
+		[]string{"protocol"},
+	)
+	// circuit opens per protocol
+	circuitOpenCount = prometheus.NewCounterVec( // *** made into CounterVec ***
+		prometheus.CounterOpts{
+			Name: "ws_circuit_open_total",
+			Help: "Total number of times circuit breaker opened by protocol",
+		},
+		[]string{"protocol"}, // ***
+	)
+	// health check successes and failures
+	healthSuccess = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ws_upstream_health_success_total", // ***
+			Help: "Total successful upstream health checks",
+		},
+	)
+	healthFail = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ws_upstream_health_failure_total", // ***
+			Help: "Total failed upstream health checks",
+		},
+	)
 )
 
 // Circuit breaker state
 var (
-    cbFailureCount    int
-    cbOpenUntil       time.Time
-    cbMutex           sync.Mutex
-    clientWriteMu     sync.Mutex 
-	upstreamReadMu    sync.Mutex
-    upstreamWriteMu   sync.Mutex
+	cbFailureCount  int
+	cbOpenUntil     time.Time
+	cbMutex         sync.Mutex
+	clientWriteMu   sync.Mutex
+	upstreamReadMu  sync.Mutex
+	upstreamWriteMu sync.Mutex
 
-    cbThreshold       = utils.GetEnvInt("CB_FAILURE_THRESHOLD", 5)                   // failures to open circuit
-    cbOpenDuration    = time.Duration(utils.GetEnvInt("CB_OPEN_TIMEOUT_SECONDS", 60)) * time.Second // open duration
-    cbHealthInterval  = time.Duration(utils.GetEnvInt("CB_HEALTHCHECK_INTERVAL_SECONDS", 30)) * time.Second // health check interval
-    dialRetryMax      = utils.GetEnvInt("WS_DIAL_RETRY_MAX", 3)                      // dial retry count
-    dialRetryInterval = time.Duration(utils.GetEnvInt("WS_DIAL_RETRY_INTERVAL_SECONDS", 2)) * time.Second // retry backoff
+	cbThreshold       = utils.GetEnvInt("CB_FAILURE_THRESHOLD", 5)                                          // failures to open circuit
+	cbOpenDuration    = time.Duration(utils.GetEnvInt("CB_OPEN_TIMEOUT_SECONDS", 60)) * time.Second         // open duration
+	cbHealthInterval  = time.Duration(utils.GetEnvInt("CB_HEALTHCHECK_INTERVAL_SECONDS", 30)) * time.Second // health check interval
+	dialRetryMax      = utils.GetEnvInt("WS_DIAL_RETRY_MAX", 3)                                             // dial retry count
+	dialRetryInterval = time.Duration(utils.GetEnvInt("WS_DIAL_RETRY_INTERVAL_SECONDS", 2)) * time.Second   // retry backoff
 )
 
 func init() {
 	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail)
-    go upstreamHealthCheck()
+	go upstreamHealthCheck()
 }
 
 var (
-    upstreamWSURL = utils.GetEnv("UPSTREAM_WS_URL")
-    writeTimeout = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
-	idleTimeout = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second 
+	upstreamWSURL = utils.GetEnv("UPSTREAM_WS_URL")
+	writeTimeout  = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
+	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
 )
 
 // ProxyWebSocket streams traffic between clientConn and an upstream WebSocket server
-// This function is the lifetime of a single proxy session between a client and an 
+// This function is the lifetime of a single proxy session between a client and an
 // upstream WebSocket. It stays alive as long as both parties are connected and talking
 // Works seamlessly with:
 // RabbitMQ
@@ -88,130 +89,130 @@ var (
 // Mosquitto with WebSocket bridge
 // Any custom WebSocket target
 func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Request, proto string, jwtToken string, roles []string) error {
-    connID := uuid.NewString()
+	connID := uuid.NewString()
 	ctx := context.WithValue(req.Context(), ctxKeyConnID, connID)
 
 	if isCircuitOpen(proto) {
-        log.Printf("[proxy] circuit open for protocol=%s; refusing connection", proto)
-        return fmt.Errorf("upstream circuit open, refusing connection")
-    }
+		log.Printf("[proxy] circuit open for protocol=%s; refusing connection", proto)
+		return fmt.Errorf("upstream circuit open, refusing connection")
+	}
 
 	// MQTT‑5 Role Injection
-    if proto == "mqtt" {
-        var err error
-        initial, err = protocol.InjectUserProperties(initial, strings.Join(roles, ","))
-		
-        if err != nil {
-            log.Printf("[proxy] Failed to inject MQTT roles: %v", err)
-        }
-    }
-	
+	if proto == "mqtt" {
+		var err error
+		initial, err = protocol.InjectUserProperties(initial, strings.Join(roles, ","))
+
+		if err != nil {
+			log.Printf("[proxy] Failed to inject MQTT roles: %v", err)
+		}
+	}
+
 	u, perr := url.Parse(upstreamWSURL)
 	if perr != nil {
-        log.Printf("[proxy] invalid upstream URL %q: %v", upstreamWSURL, perr)
+		log.Printf("[proxy] invalid upstream URL %q: %v", upstreamWSURL, perr)
 		return perr
 	}
 
 	// build dial headers for raw WS including Authorization and roles
-    hdr := http.Header{}
-    if proto == "raw" {
-        hdr.Set("Authorization", "Bearer "+jwtToken)
-        if len(roles) > 0 {
-            hdr.Set("X-User-Roles", strings.Join(roles, ","))
-        }
-    }
+	hdr := http.Header{}
+	if proto == "raw" {
+		hdr.Set("Authorization", "Bearer "+jwtToken)
+		if len(roles) > 0 {
+			hdr.Set("X-User-Roles", strings.Join(roles, ","))
+		}
+	}
 
 	var upstreamConn *websocket.Conn
-    var dialErr error
+	var dialErr error
 
-    // initial dial with retry loop and backoff
-    for i := 0; i < dialRetryMax; i++ {
-        upstreamConn, _, dialErr = websocket.DefaultDialer.Dial(u.String(), hdr)
+	// initial dial with retry loop and backoff
+	for i := 0; i < dialRetryMax; i++ {
+		upstreamConn, _, dialErr = websocket.DefaultDialer.Dial(u.String(), hdr)
 
-        if dialErr != nil {
-            proxyRetries.WithLabelValues(proto).Inc() // instrument retries
-            log.Printf("[proxy] dial attempt %d/%d failed for protocol=%s: %v", i+1, dialRetryMax, proto, dialErr)
-            select {
-            case <-ctx.Done(): // abort on shutdown
-                return ctx.Err()
-            default:
-            }
-            time.Sleep(dialRetryInterval)
-            continue
-        }
+		if dialErr != nil {
+			proxyRetries.WithLabelValues(proto).Inc() // instrument retries
+			log.Printf("[proxy] dial attempt %d/%d failed for protocol=%s: %v", i+1, dialRetryMax, proto, dialErr)
+			select {
+			case <-ctx.Done(): // abort on shutdown
+				return ctx.Err()
+			default:
+			}
+			time.Sleep(dialRetryInterval)
+			continue
+		}
 
-        resetCircuit(proto) // reset on success
-        break
-    }
-    if dialErr != nil {
-        recordFailure(ctx, proto) // count CB open if threshold
-        log.Printf("[proxy] failed to dial upstream after %d attempts for protocol=%s: %v", dialRetryMax, proto, dialErr)
-        return fmt.Errorf("failed to dial upstream after %d attempts: %w", dialRetryMax, dialErr)
-    }
+		resetCircuit(proto) // reset on success
+		break
+	}
+	if dialErr != nil {
+		recordFailure(ctx, proto) // count CB open if threshold
+		log.Printf("[proxy] failed to dial upstream after %d attempts for protocol=%s: %v", dialRetryMax, proto, dialErr)
+		return fmt.Errorf("failed to dial upstream after %d attempts: %w", dialRetryMax, dialErr)
+	}
 
 	// cleanup
 	var closeOnce sync.Once
-    closeFunc := func() {
-        clientConn.Close()
-        upstreamConn.Close()
-    }  
+	closeFunc := func() {
+		clientConn.Close()
+		upstreamConn.Close()
+	}
 	defer closeOnce.Do(closeFunc)
 
 	// Set up Pong handlers to extend read deadlines upon pong
-    clientConn.SetPongHandler(func(appData string) error {
-        clientConn.SetReadDeadline(time.Now().Add(idleTimeout)) // read deadline refresh
-        return nil
-    })
-    upstreamConn.SetPongHandler(func(appData string) error {
-        upstreamConn.SetReadDeadline(time.Now().Add(idleTimeout)) // read deadline refresh
-        return nil
-    })
+	clientConn.SetPongHandler(func(appData string) error {
+		clientConn.SetReadDeadline(time.Now().Add(idleTimeout)) // read deadline refresh
+		return nil
+	})
+	upstreamConn.SetPongHandler(func(appData string) error {
+		upstreamConn.SetReadDeadline(time.Now().Add(idleTimeout)) // read deadline refresh
+		return nil
+	})
 
 	// Forward initial CONNECT packet (for MQTT) or ignore for raw
 	upstreamWriteMu.Lock()
 	upstreamConn.SetWriteDeadline(time.Now().Add(writeTimeout))
-    ierr := upstreamConn.WriteMessage(websocket.BinaryMessage, initial)
+	ierr := upstreamConn.WriteMessage(websocket.BinaryMessage, initial)
 	upstreamWriteMu.Unlock()
-    if ierr != nil {
-        log.Printf("[proxy] failed to send initial packet to upstream: %v", ierr)
-        closeOnce.Do(closeFunc)
-        return ierr
-    }
+	if ierr != nil {
+		log.Printf("[proxy] failed to send initial packet to upstream: %v", ierr)
+		closeOnce.Do(closeFunc)
+		return ierr
+	}
 
 	pingTicker := time.NewTicker(idleTimeout / 2)
 
 	// Start ping loop
 	go func() {
-        defer pingTicker.Stop()
-        for {
-            select {
-            case <-ctx.Done(): // abort on shutdown
-                return
-            case <-pingTicker.C:
-                clientWriteMu.Lock()
-                clientConn.SetWriteDeadline(time.Now().Add(writeTimeout))
-                cerr := clientConn.WriteMessage(websocket.PingMessage, nil)
-                clientWriteMu.Unlock()
+		defer pingTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done(): // abort on shutdown
+				return
+			case <-pingTicker.C:
+				clientWriteMu.Lock()
+				clientConn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				cerr := clientConn.WriteMessage(websocket.PingMessage, nil)
+				clientWriteMu.Unlock()
 
-                if cerr != nil {
-                    log.Printf("[proxy] client ping failed: %v", cerr)
-                    closeOnce.Do(closeFunc)
-                    return
-                }
+				if cerr != nil {
+					log.Printf("[proxy] client ping failed: %v", cerr)
+					closeOnce.Do(closeFunc)
+					return
+				}
 
-                upstreamWriteMu.Lock() 
-                upstreamConn.SetWriteDeadline(time.Now().Add(writeTimeout))
-                uerr := upstreamConn.WriteMessage(websocket.PingMessage, nil)
-                upstreamWriteMu.Unlock()
+				upstreamWriteMu.Lock()
+				upstreamConn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				uerr := upstreamConn.WriteMessage(websocket.PingMessage, nil)
+				upstreamWriteMu.Unlock()
 
-                if uerr != nil {
-                    log.Printf("[proxy] upstream ping failed: %v", uerr)
-                    closeOnce.Do(closeFunc)
-                    return
-                }
-            }
-        }
-    }()
+				if uerr != nil {
+					log.Printf("[proxy] upstream ping failed: %v", uerr)
+					closeOnce.Do(closeFunc)
+					return
+				}
+			}
+		}
+	}()
 
 	errChan := make(chan error, 2)
 
@@ -222,15 +223,15 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 	// MQTT framing and binary structure
 	// Native duplex communication
 	// Latency:
-    // No parsing: Not decoding or modifying payloads
+	// No parsing: Not decoding or modifying payloads
 	// No buffering: Data is immediately forwarded as it's read
 	// No context switching: Each direction is handled in a simple goroutine
 	// No TLS termination overhead (unless used upstream)
 
-	// In practice, you’ll hit OS limits on open file descriptors (tune ulimit -n) and memory 
+	// In practice, you’ll hit OS limits on open file descriptors (tune ulimit -n) and memory
 	// pressure if you push beyond tens of thousands of concurrent connections per pod.
 
-	// Once a client upgrades, its TCP connection stays bound to the same pod until closed. 
+	// Once a client upgrades, its TCP connection stays bound to the same pod until closed.
 	// You don’t need explicit “session affinity” for an established socket.
 	go func() {
 		for {
@@ -238,10 +239,10 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 			clientConn.SetReadDeadline(time.Now().Add(idleTimeout)) // configurable if needed
 			mt, msg, rerr := clientConn.ReadMessage()
 			if rerr != nil {
-                log.Printf("[proxy] client read error: %v", rerr)
+				log.Printf("[proxy] client read error: %v", rerr)
 				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
-                    continue
-                }
+					continue
+				}
 				recordFailure(ctx, proto)
 				errChan <- rerr
 				return
@@ -249,18 +250,18 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			upstreamWriteMu.Lock()
 			upstreamConn.SetWriteDeadline(time.Now().Add(writeTimeout))
-            werr := upstreamConn.WriteMessage(mt, msg)
-            upstreamWriteMu.Unlock() 
-			
+			werr := upstreamConn.WriteMessage(mt, msg)
+			upstreamWriteMu.Unlock()
+
 			if werr != nil {
-                log.Printf("[proxy] forward to upstream failed: %v", werr)
-                if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
-                    continue
-                }
-                recordFailure(ctx, proto)
-                errChan <- werr
-                return
-            }
+				log.Printf("[proxy] forward to upstream failed: %v", werr)
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
+					continue
+				}
+				recordFailure(ctx, proto)
+				errChan <- werr
+				return
+			}
 		}
 	}()
 
@@ -269,145 +270,145 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 	go func() {
 		for {
 			upstreamReadMu.Lock()
-            upstreamConn.SetReadDeadline(time.Now().Add(idleTimeout))
-            mt, msg, rerr := upstreamConn.ReadMessage()
-            upstreamReadMu.Unlock()  
+			upstreamConn.SetReadDeadline(time.Now().Add(idleTimeout))
+			mt, msg, rerr := upstreamConn.ReadMessage()
+			upstreamReadMu.Unlock()
 
 			if rerr != nil {
-                log.Printf("[proxy] upstream read error: %v", rerr)
+				log.Printf("[proxy] upstream read error: %v", rerr)
 				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto) {
-                    continue
-                }
+					continue
+				}
 				recordFailure(ctx, proto)
 				errChan <- rerr
 				return
 			}
 
-            clientWriteMu.Lock()
+			clientWriteMu.Lock()
 			clientConn.SetWriteDeadline(time.Now().Add(writeTimeout)) // write deadline for proxy write
-            werr := clientConn.WriteMessage(mt, msg)
-            clientWriteMu.Unlock()
+			werr := clientConn.WriteMessage(mt, msg)
+			clientWriteMu.Unlock()
 
-            if werr != nil {
-                log.Printf("[proxy] forward to client failed: %v", werr)
-                errChan <- werr
-                return
-            }
+			if werr != nil {
+				log.Printf("[proxy] forward to client failed: %v", werr)
+				errChan <- werr
+				return
+			}
 		}
 	}()
 
 	// Wait for either direction to fail and ensure both are closed
 	select {
-    case <-ctx.Done():
-        log.Printf("[proxy] context canceled, shutting down")
-        closeOnce.Do(closeFunc)
-        return ctx.Err()
-    case err := <-errChan:
-        log.Printf("[proxy] proxy session ending with error: %v", err)
-        closeOnce.Do(closeFunc)
-        return err
-    }
+	case <-ctx.Done():
+		log.Printf("[proxy] context canceled, shutting down")
+		closeOnce.Do(closeFunc)
+		return ctx.Err()
+	case err := <-errChan:
+		log.Printf("[proxy] proxy session ending with error: %v", err)
+		closeOnce.Do(closeFunc)
+		return err
+	}
 }
 
 // Attempts to dial a fresh upstream and swap it in place
 func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr http.Header, proto string) bool {
-    if isCircuitOpen(proto) {
-        return false
-    }
+	if isCircuitOpen(proto) {
+		return false
+	}
 
-    id := connIDFrom(ctx)
-    log.Printf("[conn=%s proto=%s] attempting reconnect…", id, proto)
+	id := connIDFrom(ctx)
+	log.Printf("[conn=%s proto=%s] attempting reconnect…", id, proto)
 
-    for i := 0; i < dialRetryMax; i++ {
-        select {
-        case <-ctx.Done():
-            return false
-        default:
-        }
-        newConn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, hdr)
-        if err != nil {
-            log.Printf("[conn=%s proto=%s] dial failure: %v", id, proto, err)
-            proxyRetries.WithLabelValues(proto).Inc()
-            time.Sleep(dialRetryInterval)
-            continue
-        }
-        // *** lock out both readers and writers while swapping ***
-        upstreamReadMu.Lock()
-        upstreamWriteMu.Lock()
-        (*connPtr).Close()
-        *connPtr = newConn
-        upstreamWriteMu.Unlock()
-        upstreamReadMu.Unlock()
-        resetCircuit(proto)
-        log.Printf("[conn=%s proto=%s] upstream reconnected", id, proto)
-        return true
-    }
-    return false
+	for i := 0; i < dialRetryMax; i++ {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+		newConn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, hdr)
+		if err != nil {
+			log.Printf("[conn=%s proto=%s] dial failure: %v", id, proto, err)
+			proxyRetries.WithLabelValues(proto).Inc()
+			time.Sleep(dialRetryInterval)
+			continue
+		}
+		// *** lock out both readers and writers while swapping ***
+		upstreamReadMu.Lock()
+		upstreamWriteMu.Lock()
+		(*connPtr).Close()
+		*connPtr = newConn
+		upstreamWriteMu.Unlock()
+		upstreamReadMu.Unlock()
+		resetCircuit(proto)
+		log.Printf("[conn=%s proto=%s] upstream reconnected", id, proto)
+		return true
+	}
+	return false
 }
 
 // Periodically probes the upstream and resets circuit breaker on success
 func upstreamHealthCheck() {
-    ticker := time.NewTicker(cbHealthInterval)
-    defer ticker.Stop()
-    for range ticker.C {
-        conn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, nil)
-        if err != nil {
-            healthFail.Inc()
-            continue
-        }
-        conn.Close()
-        healthSuccess.Inc() 
-        cbMutex.Lock()
-        cbFailureCount = 0
-        cbOpenUntil = time.Time{}
-        cbMutex.Unlock()
-        log.Println("Upstream healthy; circuit closed")
-    }
+	ticker := time.NewTicker(cbHealthInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		conn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, nil)
+		if err != nil {
+			healthFail.Inc()
+			continue
+		}
+		conn.Close()
+		healthSuccess.Inc()
+		cbMutex.Lock()
+		cbFailureCount = 0
+		cbOpenUntil = time.Time{}
+		cbMutex.Unlock()
+		log.Println("Upstream healthy; circuit closed")
+	}
 }
 
 // Returns true if circuit breaker is open
 func isCircuitOpen(proto string) bool {
-    cbMutex.Lock()
-    defer cbMutex.Unlock()
-    if cbFailureCount < cbThreshold {
-        return false
-    }
-    if time.Now().Before(cbOpenUntil) {
-        return true
-    }
-    // half-open window: allow one test
-    cbOpenUntil = time.Time{} // clear open state
-    return false
+	cbMutex.Lock()
+	defer cbMutex.Unlock()
+	if cbFailureCount < cbThreshold {
+		return false
+	}
+	if time.Now().Before(cbOpenUntil) {
+		return true
+	}
+	// half-open window: allow one test
+	cbOpenUntil = time.Time{} // clear open state
+	return false
 }
 
 // Increments failure count and opens circuit if threshold exceeded
 func recordFailure(ctx context.Context, proto string) {
-    id := connIDFrom(ctx)
+	id := connIDFrom(ctx)
 
-    cbMutex.Lock()
-    defer cbMutex.Unlock()
-    cbFailureCount++
+	cbMutex.Lock()
+	defer cbMutex.Unlock()
+	cbFailureCount++
 
-    if cbFailureCount >= cbThreshold {
-        cbOpenUntil = time.Now().Add(cbOpenDuration)
-        circuitOpenCount.WithLabelValues(proto).Inc()    // instrument circuit opens per proto
-        log.Printf("[conn=%s proto=%s] circuit opened for %v after %d failures",
-            id, proto, cbOpenDuration, cbFailureCount)
-    }
+	if cbFailureCount >= cbThreshold {
+		cbOpenUntil = time.Now().Add(cbOpenDuration)
+		circuitOpenCount.WithLabelValues(proto).Inc() // instrument circuit opens per proto
+		log.Printf("[conn=%s proto=%s] circuit opened for %v after %d failures",
+			id, proto, cbOpenDuration, cbFailureCount)
+	}
 }
 
 // Clears failure count and open state
 func resetCircuit(proto string) {
-    cbMutex.Lock()
-    defer cbMutex.Unlock()
-    cbFailureCount = 0
-    cbOpenUntil = time.Time{}
-    circuitOpenCount.WithLabelValues(proto).Add(0)      // ensure metric exists
+	cbMutex.Lock()
+	defer cbMutex.Unlock()
+	cbFailureCount = 0
+	cbOpenUntil = time.Time{}
+	circuitOpenCount.WithLabelValues(proto).Add(0) // ensure metric exists
 }
 
 func connIDFrom(ctx context.Context) string {
-    if v := ctx.Value(ctxKeyConnID); v != nil {
-        return v.(string)
-    }
-    return "unknown"
+	if v := ctx.Value(ctxKeyConnID); v != nil {
+		return v.(string)
+	}
+	return "unknown"
 }

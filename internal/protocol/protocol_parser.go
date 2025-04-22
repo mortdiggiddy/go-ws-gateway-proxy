@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	connectPacketType   = 0x10
+	connectPacketType    = 0x10
 	maxConnectPacketSize = 1024 * 2 // 2KB
-	protoNameExpected = "MQTT"
-    mqtt5Level        = 5
+	protoNameExpected    = "MQTT"
+	mqtt5Level           = 5
 )
 
 // ParseConnect determines the protocol type (mqtt, raw) and delegates parsing
@@ -23,7 +23,7 @@ func ParseConnect(packet []byte, r *http.Request) (protocol string, username str
 		username, jwtToken, err := parseMQTTConnect(packet)
 		return "mqtt", username, jwtToken, err
 	}
-	
+
 	// Raw WebSocket client detected, extract JWT from headers or query param
 	var token string
 	authHeader := r.Header.Get("Authorization")
@@ -36,7 +36,7 @@ func ParseConnect(packet []byte, r *http.Request) (protocol string, username str
 		token = r.URL.Query().Get("token")
 	}
 
-	return "raw", "", token, nil 
+	return "raw", "", token, nil
 }
 
 // isMQTTConnect does a minimal check to detect MQTT CONNECT packets
@@ -176,7 +176,7 @@ func decodeVariableLength(data []byte) (int, int) {
 		encodedByte := data[i]
 		value += int(encodedByte&127) << (7 * multiplier)
 		multiplier++
-		if encodedByte&128 == 0 { 
+		if encodedByte&128 == 0 {
 			return value, multiplier
 		}
 	}
@@ -217,4 +217,3 @@ func readVarInt(buf *bytes.Reader) (int, int, error) {
 	}
 	return value, consumed, nil
 }
-

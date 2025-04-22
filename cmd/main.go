@@ -31,11 +31,11 @@ var (
 	})
 
 	protocolConnections = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "ws_protocol_connections_total",
-            Help: "Total number of WebSocket connections by protocol",
-        }, []string{"protocol"},
-    )
+		prometheus.CounterOpts{
+			Name: "ws_protocol_connections_total",
+			Help: "Total number of WebSocket connections by protocol",
+		}, []string{"protocol"},
+	)
 
 	authFailures = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "ws_auth_failures_total",
@@ -53,22 +53,22 @@ var (
 	})
 
 	proxyErrors = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "ws_proxy_errors_total",
-            Help: "Total number of proxy errors by protocol",
-        }, []string{"protocol"},
-    )
+		prometheus.CounterOpts{
+			Name: "ws_proxy_errors_total",
+			Help: "Total number of proxy errors by protocol",
+		}, []string{"protocol"},
+	)
 
-    connectionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-        Name:    "ws_connection_duration_seconds",
-        Help:    "Duration of WebSocket sessions in seconds",
-        Buckets: prometheus.DefBuckets,
-    })
+	connectionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "ws_connection_duration_seconds",
+		Help:    "Duration of WebSocket sessions in seconds",
+		Buckets: prometheus.DefBuckets,
+	})
 )
 
 var (
-    // WaitGroup to track active WebSocket sessions for graceful draining
-    sessionsWg sync.WaitGroup
+	// WaitGroup to track active WebSocket sessions for graceful draining
+	sessionsWg sync.WaitGroup
 )
 
 func init() {
@@ -87,11 +87,11 @@ var upgrader = websocket.Upgrader{
 
 		// No origin (e.g. non-browser) is allowed
 		if origin == "" {
-		    return true
+			return true
 		}
 
 		// Load allowed origins (comma-separated), default to exact if unset
-		// can now be set to multiple origins (e.g. https://app1.example.com,https://app2.example.com) 
+		// can now be set to multiple origins (e.g. https://app1.example.com,https://app2.example.com)
 		// or wildcard suffixes like *.example.com
 		allowed := strings.Split(utils.GetEnv("WS_ALLOWED_ORIGINS", origin), ",")
 
@@ -141,27 +141,27 @@ func main() {
 	log.Println("Shutdown initiated, stopping new connections...")
 
 	// Stop accepting new HTTP/WebSocket connections
-    ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    server.Shutdown(ctxShutdown) // stops listener but waits for handlers
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server.Shutdown(ctxShutdown) // stops listener but waits for handlers
 
 	// Drain existing sessions
-    drainSec := utils.GetEnvInt("GRACEFUL_DRAIN_TIMEOUT_SECONDS", 30)
+	drainSec := utils.GetEnvInt("GRACEFUL_DRAIN_TIMEOUT_SECONDS", 30)
 
-    log.Printf("Draining active sessions (up to %d seconds)...", drainSec)
-    done := make(chan struct{})
-    
+	log.Printf("Draining active sessions (up to %d seconds)...", drainSec)
+	done := make(chan struct{})
+
 	go func() {
-        sessionsWg.Wait() // wait for all sessions to finish
-        close(done)
-    }()
+		sessionsWg.Wait() // wait for all sessions to finish
+		close(done)
+	}()
 
 	select {
-    case <-done:
-        log.Println("All sessions drained")
-    case <-time.After(time.Duration(drainSec) * time.Second):
-        log.Println("Drain timeout reached, exiting")
-    }
+	case <-done:
+		log.Println("All sessions drained")
+	case <-time.After(time.Duration(drainSec) * time.Second):
+		log.Println("Drain timeout reached, exiting")
+	}
 
 	log.Println("Shutdown complete")
 }
@@ -171,9 +171,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer sessionsWg.Done()
 
 	start := time.Now()
-    defer func() {
-        connectionDuration.Observe(time.Since(start).Seconds())
-    }()
+	defer func() {
+		connectionDuration.Observe(time.Since(start).Seconds())
+	}()
 
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -221,7 +221,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// });
 
 		// The browser will automatically include your HTTP‑only cookie in the upgrade.
-		
+
 		// At the L4/L7 layer (i.e. Traefik) make sure to pass the original X-Forwarded-Proto
 		// and X-Forwarded-For headers so that the Golang code can reconstruct the real client IP
 		// if you ever need to log or rate limit by IP address
@@ -234,13 +234,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	controlTimeout := time.Duration(utils.GetEnvInt("WS_CONTROL_TIMEOUT_SECONDS", 1)) * time.Second
-	
+
 	if err != nil {
 		log.Println("CONNECT parse error:", err)
 		conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
 		conn.WriteControl(
-			websocket.CloseMessage, 
-			websocket.FormatCloseMessage(1002, "Bad CONNECT"), 
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(1002, "Bad CONNECT"),
 			time.Now().Add(controlTimeout))
 		return
 	}
@@ -315,29 +315,29 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	var roles []string
 
-    if realmAccess, ok := claims["realm_access"].(map[string]interface{}); ok {
-        if rList, ok := realmAccess["roles"].([]interface{}); ok {
-            for _, rr := range rList {
-                if rs, ok := rr.(string); ok {
-                    roles = append(roles, rs)
-                }
-            }
-        }
-    }
+	if realmAccess, ok := claims["realm_access"].(map[string]interface{}); ok {
+		if rList, ok := realmAccess["roles"].([]interface{}); ok {
+			for _, rr := range rList {
+				if rs, ok := rr.(string); ok {
+					roles = append(roles, rs)
+				}
+			}
+		}
+	}
 
-    if resAcc, ok := claims["resource_access"].(map[string]interface{}); ok {
-        for _, v := range resAcc {
-            if clientMap, ok := v.(map[string]interface{}); ok {
-                if rList, ok := clientMap["roles"].([]interface{}); ok {
-                    for _, rr := range rList {
-                        if rs, ok := rr.(string); ok {
-                            roles = append(roles, rs)
-                        }
-                    }
-                }
-            }
-        }
-    }
+	if resAcc, ok := claims["resource_access"].(map[string]interface{}); ok {
+		for _, v := range resAcc {
+			if clientMap, ok := v.(map[string]interface{}); ok {
+				if rList, ok := clientMap["roles"].([]interface{}); ok {
+					for _, rr := range rList {
+						if rs, ok := rr.(string); ok {
+							roles = append(roles, rs)
+						}
+					}
+				}
+			}
+		}
+	}
 
 	// Proxy traffic to backend
 	if err := proxy.ProxyWebSocket(conn, packet, r, proto, jwtToken, roles); err != nil {
