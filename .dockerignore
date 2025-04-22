@@ -10,6 +10,7 @@
 # build artifacts
 *.exe
 *.test
+.env.example
 bin/
 build/
 
