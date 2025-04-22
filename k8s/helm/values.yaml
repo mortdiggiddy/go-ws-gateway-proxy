@@ -44,6 +44,8 @@ env: # Projected into ConfigMap
   RATE_LIMIT_BURST: "30"
   JWKS_URL: "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
   JWKS_TTL_MINUTES: "10"
+  JWT_CACHE_STORE: "redis"
+  JWT_CACHE_PREFIX: "jwt_cached_token_"
 
 secrets: # Projected into Kubernetes Secret
   JWT_EXPECTED_ISSUER: "https://keycloak.example.com/realms/myrealm"

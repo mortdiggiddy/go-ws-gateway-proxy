@@ -74,6 +74,33 @@ protocol, username, token, err := ParseConnect(packet)
 
 This creates a **security envelope** on top of the WebSocket protocol, even when the downstream WebSocket service (like RabbitMQ) lacks native identity enforcement.
 
+### 🔐 JWT Caching & Replay Protection
+
+The gateway supports token caching to avoid repeatedly verifying JWT signatures and to prepare for future features like token revocation and replay detection.
+
+- **Supported cache backends**:
+
+  - `memory` (default, per-pod, ephemeral)
+  - `redis` (shared across replicas)
+  - `postgres` (persistent, optionally shared)
+
+- **Configuration:**
+
+  - `JWT_CACHE_STORE`: `memory` | `redis` | `postgres`
+  - `JWT_CACHE_PREFIX`: Optional prefix to namespace cache keys (default: `jwt_cached_token_`)
+  - `REDIS_URL`: Required when using Redis backend
+  - `POSTGRES_DSN`: Required when using Postgres backend
+
+- **Behavior:**
+  - Valid JWTs (based on `sub`, `jti`, `exp`) are cached
+  - Prevents repeated re-verification of the same token
+  - Prepares groundwork for future support of:
+    - Token revocation lists (via `jti`)
+    - Replay detection across IPs/devices
+    - Real-time token invalidation
+
+Fallback to in-memory cache occurs automatically if misconfiguration is detected or external stores are unavailable.
+
 ### ✅ Transparent Proxying
 
 - Zero-copy WebSocket forwarding
@@ -226,12 +253,6 @@ docker run --rm \
 ---
 
 ## 🔮 Future Enhancements
-
-### 🧠 Redis-backed JWT Session Cache
-
-- Cache `jti`, `exp`, and validation results
-- Detect token replay or early revocation
-- Share across multiple gateway replicas
 
 ### 🔀 Multi-Upstream Routing
 
