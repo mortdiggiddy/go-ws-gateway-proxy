@@ -91,9 +91,9 @@ func init() {
 		burst := utils.GetEnvInt("RATE_LIMIT_BURST", 30)
 
 		if redisURL := utils.GetEnv("REDIS_URL"); redisURL != "" {
-			opt, err := redis.ParseURL(redisURL)
+			_, err := redis.ParseURL(redisURL)
 			if err == nil {
-				client := redis.NewClient(opt)
+				client := utils.GetRedisClient()
 				sharedRedisLimiter = ratelimit.NewRedisRateLimiter(client, burst, "wsrl")
 			}
 		}

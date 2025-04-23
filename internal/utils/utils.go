@@ -3,10 +3,28 @@ package utils
 import (
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var (
+	redisOnce sync.Once
+	redisCli  *redis.Client
+)
+
+func GetRedisClient() *redis.Client {
+	redisOnce.Do(func() {
+		opt, err := redis.ParseURL(GetEnv("REDIS_URL", ""))
+		if err != nil {
+			panic("invalid REDIS_URL: " + err.Error())
+		}
+		redisCli = redis.NewClient(opt)
+	})
+	return redisCli
+}
 
 // GetEnv returns the value of the environment variable or a default (empty string if no default supplied)
 func GetEnv(key string, def ...string) string {

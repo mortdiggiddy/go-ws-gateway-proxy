@@ -40,13 +40,13 @@ func initTokenCache() {
 				tokenCache = newMemoryCache()
 				return
 			}
-			opt, err := redis.ParseURL(url)
+			_, err := redis.ParseURL(url)
 			if err != nil {
 				log.Printf("invalid REDIS_URL: %v; falling back to memory cache", err)
 				tokenCache = newMemoryCache()
 				return
 			}
-			client := redis.NewClient(opt)
+			client := utils.GetRedisClient()
 			tokenCache = &redisCache{client: client}
 
 		case "postgres":
