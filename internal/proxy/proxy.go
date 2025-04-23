@@ -356,17 +356,32 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		}
 	}()
 
-	// Wait for either direction to fail and ensure both are closed
+	// Revocation subscription
+	tokenKey, _ := utils.ExtractCacheKeyFromClaims(claims)
+
+	pubsub := utils.GetRedisClient().Subscribe(ctx, "ws:revocations:"+tokenKey)
+	defer pubsub.Close()
+	revCh := pubsub.Channel()
+
+	// Wait for shutdown, revocation, or error
 	select {
 	case <-ctx.Done():
+		// normal shutdown
 		log.Printf("[proxy] context canceled, shutting down")
-		closeOnce.Do(closeFunc)
-		return ctx.Err()
+	case <-revCh:
+		// poison-pill received
+		clientWriteMu.Lock()
+		clientConn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(1008, "Token revoked"),
+			time.Now().Add(writeTimeout),
+		)
+		clientWriteMu.Unlock()
 	case err := <-errChan:
-		log.Printf("[proxy] proxy session ending with error: %v", err)
-		closeOnce.Do(closeFunc)
-		return err
+		log.Printf("[proxy] session error: %v", err)
 	}
+
+	return nil
 }
 
 // Attempts to dial a fresh upstream and swap it in place

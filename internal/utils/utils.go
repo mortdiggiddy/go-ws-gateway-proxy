@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -56,6 +57,27 @@ func GetClaim(claims jwt.MapClaims, key string) string {
 		}
 	}
 	return "unknown"
+}
+
+// extractCacheKey builds a cache key combining sub and jti when available, reusing pre-unmarshaled claims
+func ExtractCacheKeyFromClaims(claims jwt.MapClaims) (string, error) {
+	sub := GetClaim(claims, "sub")
+	jti := GetClaim(claims, "jti")
+
+	// combine sub and jti
+	if sub != "" && jti != "" {
+		return fmt.Sprintf("%s:%s", sub, jti), nil
+	}
+
+	if jti != "" {
+		return jti, nil // fallback to jti alone
+	}
+
+	if sub != "" {
+		return sub, nil // fallback to sub alone
+	}
+
+	return "", fmt.Errorf("no sub or jti claim")
 }
 
 // Reads a time.Duration from env (e.g. "5s", "1m") or returns def

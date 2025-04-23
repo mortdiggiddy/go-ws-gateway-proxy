@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
+	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/admin"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/auth"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/protocol"
 	"github.com/mortdiggiddy/go-ws-gateway-proxy/internal/proxy"
@@ -121,6 +122,9 @@ func main() {
 
 	// Metrics endpoint
 	http.Handle("/metrics", promhttp.Handler())
+
+	// Admin API: revoke cached tokens & close connections
+	http.HandleFunc("/admin/revoke", admin.RevokeHandler)
 
 	server := &http.Server{
 		Addr: ":8080",

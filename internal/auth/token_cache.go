@@ -22,6 +22,7 @@ var (
 type TokenCache interface {
 	Get(ctx context.Context, key string) (bool, error)
 	Set(ctx context.Context, key string, ttl time.Duration) error
+	Delete(ctx context.Context, key string) error
 }
 
 var (
@@ -77,6 +78,12 @@ func initTokenCache() {
 	})
 }
 
+// Returns the singleton initialized cache.
+func GetTokenCache() TokenCache {
+	initTokenCache()
+	return tokenCache
+}
+
 // memoryCache is a simple in-memory TTL map
 type memoryCache struct {
 	mu    sync.RWMutex
@@ -112,6 +119,14 @@ func (m *memoryCache) Set(ctx context.Context, key string, ttl time.Duration) er
 	return nil
 }
 
+func (m *memoryCache) Delete(ctx context.Context, key string) error {
+	realKey := cachePrefix + key
+	m.mu.Lock()
+	delete(m.items, realKey)
+	m.mu.Unlock()
+	return nil
+}
+
 // redisCache uses Redis SET with TTL and EXISTS
 type redisCache struct{ client *redis.Client }
 
@@ -124,6 +139,11 @@ func (r *redisCache) Get(ctx context.Context, key string) (bool, error) {
 func (r *redisCache) Set(ctx context.Context, key string, ttl time.Duration) error {
 	realKey := cachePrefix + key
 	return r.client.Set(ctx, realKey, "1", ttl).Err()
+}
+
+func (r *redisCache) Delete(ctx context.Context, key string) error {
+	realKey := cachePrefix + key
+	return r.client.Del(ctx, realKey).Err()
 }
 
 // postgresCache stores expiration timestamps in a Postgres table
@@ -166,6 +186,12 @@ func (p *postgresCache) Set(ctx context.Context, key string, ttl time.Duration) 
            INSERT INTO jwt_cache (key, expires) VALUES ($1, $2)
            ON CONFLICT (key) DO UPDATE SET expires = EXCLUDED.expires
        `, realKey, exp)
+	return err
+}
+
+func (p *postgresCache) Delete(ctx context.Context, key string) error {
+	realKey := cachePrefix + key
+	_, err := p.db.ExecContext(ctx, "DELETE FROM jwt_cache WHERE key = $1", realKey)
 	return err
 }
 

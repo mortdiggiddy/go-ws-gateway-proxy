@@ -101,6 +101,36 @@ The gateway supports token caching to avoid repeatedly verifying JWT signatures 
 
 Fallback to in-memory cache occurs automatically if misconfiguration is detected or external stores are unavailable.
 
+#### 🔐 Token Revocation & Replay Response (Experimental)
+
+The gateway now includes early-stage support for distributed token revocation and eviction. This is useful for:
+
+- Forcing logout or session termination across connected clients
+- Coordinating global revocation across pods using Redis Pub/Sub
+- Clearing `jti` entries from the in-memory or external token cache (Redis/Postgres)
+
+### ✅ Capabilities
+
+- `POST /admin/revoke`: Revoke a specific token using its `sub` and `jti` claims.
+- Revocation removes the token from the active cache backend (in-memory, Redis, or Postgres).
+- Revocation also publishes a **"poison pill"** via Redis to notify all proxy pods.
+- Any active WebSocket connection using that token will be closed with a `1008` frame.
+
+### 🔁 Current Limitations
+
+- Replay protection is still **best-effort**—only sessions that respect `sub:jti` cache keys are affected.
+- Clients using the same token across connections may still connect briefly before the revocation is received.
+- A background job or expiration TTL is still needed for Postgres cache cleanup (see TODO).
+- Intended to run behind a service mesh, reverse proxy, or internal firewall, no protection on this exposed route.
+
+### Example Revocation Request
+
+```bash
+curl -X POST http://<gateway-host>/admin/revoke \
+  -H "Content-Type: application/json" \
+  -d '{ "sub": "user123", "jti": "abcde-uuid-123" }'
+```
+
 ### ✅ Transparent Proxying
 
 - Zero-copy WebSocket forwarding

@@ -69,7 +69,7 @@ func getJWKS(ctx context.Context) (jwk.Set, error) {
 func VerifyJWT(ctx context.Context, tokenString string, claims jwt.MapClaims) (bool, error) {
 	initTokenCache()
 
-	key, keyErr := extractCacheKeyFromClaims(claims)
+	key, keyErr := utils.ExtractCacheKeyFromClaims(claims)
 
 	if keyErr == nil {
 		if found, err := tokenCache.Get(ctx, key); err == nil && found {
@@ -153,25 +153,4 @@ func VerifyJWT(ctx context.Context, tokenString string, claims jwt.MapClaims) (b
 	tokenCache.Set(ctx, key, ttl) // store in cache
 
 	return true, nil
-}
-
-// extractCacheKey builds a cache key combining sub and jti when available, reusing pre-unmarshaled claims
-func extractCacheKeyFromClaims(claims jwt.MapClaims) (string, error) {
-	sub := utils.GetClaim(claims, "sub")
-	jti := utils.GetClaim(claims, "jti")
-
-	// combine sub and jti
-	if sub != "" && jti != "" {
-		return fmt.Sprintf("%s:%s", sub, jti), nil
-	}
-
-	if jti != "" {
-		return jti, nil // fallback to jti alone
-	}
-
-	if sub != "" {
-		return sub, nil // fallback to sub alone
-	}
-
-	return "", fmt.Errorf("no sub or jti claim")
 }
