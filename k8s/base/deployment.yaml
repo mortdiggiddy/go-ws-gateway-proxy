@@ -12,7 +12,7 @@ spec:
       labels:
         app: go-ws-gateway-proxy
     spec:
-      terminationGracePeriodSeconds: 60     # wait up to 60s for preStop
+      terminationGracePeriodSeconds: 60 # wait up to 60s for preStop, must be > (GRACEFUL_DRAIN_TIMEOUT_SECONDS + 5)
       containers:
         - name: proxy
           image: your-registry/go-ws-gateway-proxy:latest
@@ -40,12 +40,13 @@ spec:
             periodSeconds: 20
             timeoutSeconds: 5
           lifecycle:
-            preStop:
+            preStop: # runs before the SIGKILL timer starts, K8s runs the preStop hook before it sends SIGTERM to PID 1
               exec:
                 command:
                   - /bin/sh
                   - -c
                   - |
+                    kill -SIGTERM 1
                     echo "Draining connections for ${GRACEFUL_DRAIN_TIMEOUT_SECONDS}s"
                     sleep ${GRACEFUL_DRAIN_TIMEOUT_SECONDS}
           resources:

@@ -138,6 +138,14 @@ func main() {
 	}()
 
 	// --- Graceful shutdown sequence ---
+	// 1. preStop triggers kill -SIGTERM 1
+	// 2. GRACEFUL_DRAIN_TIMEOUT_SECONDS=30
+	// 3. preStop sleep = 30 s
+	// 4. server.Shutdown hard limit = 5 s (to stop listening)
+	// 5. sessionsWg.Wait hard limit = 30 s
+	// 6. Total worst-case = ~35 s
+	// 7. terminationGracePeriodSeconds = 60 s (ample buffer)
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
@@ -145,7 +153,7 @@ func main() {
 	log.Println("Shutdown initiated, stopping new connections...")
 
 	// Stop accepting new HTTP/WebSocket connections
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), time.Duration(utils.GetEnvInt("SHUTDOWN_HARD_LIMIT", 5))*time.Second)
 	defer cancel()
 	server.Shutdown(ctxShutdown) // stops listener but waits for handlers
 
