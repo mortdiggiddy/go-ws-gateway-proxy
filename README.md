@@ -1,6 +1,6 @@
 # go-ws-gateway-proxy
 
-A high-performance, secure, and protocol-aware WebSocket gateway designed to handle thousands of concurrent connections—whether MQTT-over-WebSocket or raw WebSocket—in a unified, observable, and production-ready manner.
+A high-performance, secure, and protocol aware WebSocket gateway designed to handle thousands of concurrent connections, whether MQTT-over-WebSocket or raw WebSocket in a unified, observable, and production ready manner.
 
 ---
 
