@@ -21,7 +21,7 @@ While WebSocket is a great transport for bidirectional communication, **many Web
 **Why JWT?**
 
 - Because it's interoperable with any **OIDC-compliant identity provider** (like Keycloak, Auth0, AWS Cognito, Azure AD)
-- JWTs can be **embedded in MQTT CONNECT packets**, used as initial messages, or sent in headers in future extensions
+- JWTs can be **embedded in MQTT CONNECT packets**, used as initial messages, sent in headers, or attached a (http-only) session cookie
 - This allows the gateway to be a proper **security enforcement boundary**, even when the backend lacks native identity controls
 
 **This project is that gateway.**
@@ -53,7 +53,7 @@ Written in Go for performance and concurrency, it uses:
 
 Single endpoint (`/ws`) supports both:
 
-- MQTT-over-WebSocket (e.g., RabbitMQ w/ MQTT plugin)
+- MQTT-over-WebSocket (e.g., RabbitMQ w/ MQTT-WS plugin)
 - EMQX
 - Mosquitto with WebSocket bridge
 - Raw WebSocket clients (e.g., control channels, JSON-RPC, custom frames)
@@ -68,15 +68,15 @@ protocol, username, token, err := ParseConnect(packet)
 
 ### 🛡️ Secure JWT Validation
 
-- JWTs extracted from MQTT `password` or raw WS payload
-- Validated using JWKS from Keycloak (or any OIDC-compliant provider)
+- JWTs extracted from MQTT `password`, raw WS payload, headers, or (http-only) session cookie
+- Validated using JWKS from any OIDC-compliant provider
 - Claims parsed: `sub`, `preferred_username`, `iat`, `exp`, `jti`
 
-This creates a **security envelope** on top of the WebSocket protocol, even when the downstream WebSocket service (like RabbitMQ) lacks native identity enforcement.
+This creates a **security envelope** on top of the WebSocket protocol, even when the downstream WebSocket service lacks native identity enforcement.
 
 ### 🔐 JWT Caching & Replay Protection
 
-The gateway supports token caching to avoid repeatedly verifying JWT signatures and to prepare for future features like token revocation and replay detection.
+The gateway supports token caching to avoid repeatedly verifying JWT signatures and to prepare for features like token revocation and replay detection.
 
 - **Supported cache backends**:
 
@@ -94,7 +94,7 @@ The gateway supports token caching to avoid repeatedly verifying JWT signatures 
 - **Behavior:**
   - Valid JWTs (based on `sub`, `jti`, `exp`) are cached
   - Prevents repeated re-verification of the same token
-  - Prepares groundwork for future support of:
+  - Prepares groundwork for support of:
     - Token revocation lists (via `jti`)
     - Replay detection across IPs/devices
     - Real-time token invalidation
@@ -207,11 +207,13 @@ The gateway supports **optional message-level rate limiting** on all active WebS
 ├── .env.example
 ├── scripts/
 │   └── docker_run.sh
+├── cmd/
+│   ├── main.go        # Entry point
 ├── internal/
 │   ├── mqtt/          # Protocol detection & parsing
 │   ├── auth/          # JWT verification via JWKS
 │   └── proxy/         # Transparent duplex forwarding
-├── main.go            # Entry point
+├── k8s/               # Kubernetes manifest files
 └── README.md
 ```
 
