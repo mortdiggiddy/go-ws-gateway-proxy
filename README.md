@@ -233,20 +233,6 @@ The gateway supports **optional message-level rate limiting** on all active WebS
 └── README.md
 ```
 
-## 🔧 Architecture
-
-### 1. Direct WebSocket Gateway Model
-
-This shows how a client connects directly to the `go-ws-gateway-proxy`, which validates JWTs and forwards traffic to the backend.
-
-![Basic JWT Proxy Flow](public/go-ws-gateway-1.png)
-
-### 2. Full Deployment with Traefik + Ingress
-
-This shows how the proxy can sit behind a public L4/L7 ingress (e.g., Traefik) and route traffic securely within Kubernetes or a VM-based infrastructure.
-
-![Ingress-Traefik Deployment Flow](public/go-ws-gateway-2.png)
-
 ---
 
 ## 🐳 Running with Docker
