@@ -19,7 +19,7 @@ type Route struct {
 }
 
 // loadRoutes reads /etc/ws-gw/routes.yaml (path is passed via flag/env)
-func loadRoutes(path string) ([]Route, error) {
+func LoadRoutes(path string) ([]Route, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func loadRoutes(path string) ([]Route, error) {
 }
 
 // upstreamFor returns the upstream URL + headers for a given request
-func upstreamFor(req *http.Request, routes []Route) (string, http.Header, error) {
+func UpstreamFor(req *http.Request, routes []Route) (string, http.Header, error) {
 	for _, r := range routes {
 		if strings.HasPrefix(req.URL.Path, r.Prefix) {
 			u, _ := url.Parse(r.Upstream)
