@@ -69,4 +69,3 @@ secrets: # Projected into Kubernetes Secret
   JWT_VALID_ALGORITHMS: "RS256"
   REDIS_URL: ""
   POSTGRES_DSN: ""
-  UPSTREAM_WS_URL: "ws://rabbitmq:15675/ws"

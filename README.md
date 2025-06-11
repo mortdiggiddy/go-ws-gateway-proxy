@@ -277,6 +277,17 @@ docker run --rm \
   go-ws-gateway-proxy
 ```
 
+**Note:** The container looks for `/etc/ws-gw/routes.yaml`.
+When running standalone Docker, mount your own:
+
+```bash
+docker run -p 8080:8080 \
+  -v $(pwd)/routes.yaml:/etc/ws-gw/routes.yaml:ro \
+  --env JWKS_URL=... \
+  go-ws-gateway-proxy:latest
+```
+
+
 ### Step 3: Access Metrics & Health
 
 - `http://localhost:8080/metrics`
@@ -292,6 +303,17 @@ docker run --rm \
 | `WS_ALLOWED_ORIGINS`             | Comma-separated list or wildcard of allowed WebSocket origins     | value of `Origin` header |
 | `JWT_COOKIE_NAME`                | Cookie name to extract JWT from if not provided in CONNECT/header | `session`                |
 | `GRACEFUL_DRAIN_TIMEOUT_SECONDS` | Max time to wait for active connections to finish on SIGTERM      | `30`                     |
+
+### 🗺️ Routing table
+
+| File | When |
+|------|------|
+| `k8s/base/configmap-routes.yaml` | Kustomize base – edit or patch to add new upstreams |
+| `values.yaml → gatewayRoutes:` | Helm chart – override per environment |
+
+The proxy loads the YAML, matches the first `prefix` that fits
+`req.URL.Path`, and dials the `upstream` with optional sub-protocol copying
+and query-string preservation.
 
 ### 🔐 JWT / OIDC Authentication
 
@@ -321,11 +343,11 @@ docker run --rm \
 
 ### 🔁 Upstream Connection (Backend)
 
-| Env Var                          | Purpose                                                  | Default                  |
-| -------------------------------- | -------------------------------------------------------- | ------------------------ |
-| `UPSTREAM_WS_URL`                | Target WebSocket endpoint (e.g. RabbitMQ MQTT-over-WS)   | `ws://rabbitmq:15675/ws` |
-| `WS_DIAL_RETRY_MAX`              | Number of times to retry dialing the upstream on failure | `3`                      |
-| `WS_DIAL_RETRY_INTERVAL_SECONDS` | Delay between retry attempts                             | `2`                      |
+| Env Var                          | Purpose                                                    | Default                  |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------ |
+| `ROUTE_FILE`                     | Absolute path to routes.yaml (overrides --route-file flag) | `/etc/ws-gw/routes.yaml` |
+| `WS_DIAL_RETRY_MAX`              | Number of times to retry dialing the upstream on failure   | `3`                      |
+| `WS_DIAL_RETRY_INTERVAL_SECONDS` | Delay between retry attempts                               | `2`                      |
 
 ### 🚦 Rate Limiting
 
@@ -347,12 +369,22 @@ docker run --rm \
 
 ## 🔮 Future Enhancements
 
-### 🔀 Multi-Upstream Routing
+### 🚏 Multi-Upstream Routing  (NEW in v0.3)
 
-- Load balance or route by `sub`, `claims`, or protocol
-- Separate fleets of robots or services
-- Support for sticky sessions by token hash
-- ⚠️ _Note_: Current implementation limits per `sub` or IP to prevent abuse, **but does not prevent JWT replay across clients**. Full replay prevention would require `jti` tracking and token revocation lists.
+Routes are now declared by ConfigMap (Kustomize) or `gatewayRoutes` in Helm
+values.  Each entry maps a URL prefix to an upstream WebSocket endpoint:
+
+```yaml
+gatewayRoutes:
+  - prefix: /livekit
+    upstream: ws://livekit-signal.media.svc.cluster.local:7880/signal
+    copySubProtocol: true
+    preserveQuery: true
+  - prefix: /mqtt
+    upstream: ws://rabbitmq-mqtt.messaging.svc.cluster.local:15675/ws
+    copySubProtocol: false
+    preserveQuery: true
+```
 
 ### 📡 Backpressure & Rate Limiting
 

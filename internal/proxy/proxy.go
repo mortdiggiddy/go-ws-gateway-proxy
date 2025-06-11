@@ -75,8 +75,8 @@ var (
 	dialRetryMax      = utils.GetEnvInt("WS_DIAL_RETRY_MAX", 3)                                             // dial retry count
 	dialRetryInterval = time.Duration(utils.GetEnvInt("WS_DIAL_RETRY_INTERVAL_SECONDS", 2)) * time.Second   // retry backoff
 
-	writeTimeout  = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
-	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
+	writeTimeout = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
+	idleTimeout  = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
 
 	healthRegistry sync.Map
 )
@@ -146,20 +146,19 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		}
 	}
 
-	u, perr := url.Parse(upstreamURL)
-	if perr != nil {
+	if _, perr := url.Parse(upstreamURL); perr != nil {
 		log.Printf("[proxy] invalid upstream URL %q: %v", upstreamURL, perr)
 		return perr
 	}
 
 	// build dial headers for raw WS including Authorization and roles
 	hdr := http.Header{}
-	
+
 	// copy any headers supplied by the router table (e.g., Sec-WebSocket-Protocol)
-        for k, v := range extraHeaders {
-        	hdr[k] = v
+	for k, v := range extraHeaders {
+		hdr[k] = v
 	}
-	
+
 	if proto == "raw" {
 		hdr.Set("Authorization", "Bearer "+jwtToken)
 		if len(roles) > 0 {
