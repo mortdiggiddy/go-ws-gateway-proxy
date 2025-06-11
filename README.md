@@ -193,6 +193,7 @@ The gateway supports **optional message-level rate limiting** on all active WebS
 | `ws_auth_success_total{sub,preferred_username}` | Successful JWT authentications labeled by subject and username |
 | `ws_active_sessions`                            | Currently active WebSocket proxy sessions                      |
 | `ws_connection_duration_seconds`                | Histogram of WebSocket session lifetimes (seconds)             |
+| `ws_revocations_total`                          | Total number of manually revoked sessions                      |
 | `ws_protocol_connections_total{protocol}`       | Total connection count by protocol type (`mqtt`, `raw`, etc.)  |
 | `ws_proxy_errors_total{protocol}`               | Total proxy-level failures during streaming                    |
 | `ws_proxy_retries_total{protocol}`              | Count of upstream reconnect attempts during proxying           |
