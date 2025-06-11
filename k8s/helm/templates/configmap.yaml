@@ -1,8 +1,27 @@
+{{- /*
+     ConfigMap template
+     1. {{ .Values.env }}  -> key-value environment defaults
+     2. {{ .Values.gatewayRoutes }} -> YAML routing table read by proxy
+*/ -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "go-ws-gateway-proxy.fullname" . }}-config
+  labels: {{- include "go-ws-gateway-proxy.labels" . | nindent 4 }}
 data:
   {{- range $k, $v := .Values.env }}
   {{ $k }}: "{{ $v }}"
   {{- end }}
+
+{{- /* ----------------------------------------------------------- */ -}}
+{{- if .Values.gatewayRoutes }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "go-ws-gateway-proxy.fullname" . }}-routes
+  labels: {{- include "go-ws-gateway-proxy.labels" . | nindent 4 }}
+data:
+  routes.yaml: |-
+{{ toYaml .Values.gatewayRoutes | indent 4 }}
+{{- end }}
