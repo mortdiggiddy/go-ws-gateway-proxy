@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # WebSocket Gateway Proxy
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ws-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      JWKS_URL: "https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs"
+      JWT_COOKIE_NAME: "session"
+      RATE_LIMIT_PER_SECOND: "10"
+      RATE_LIMIT_BURST: "30"
+      CB_FAILURE_THRESHOLD: "5"
+      CB_OPEN_TIMEOUT_SECONDS: "60"
+      # -- Redis cache for JWT & rate limit (uncomment if using external Redis) --
+      # REDIS_URL: "redis://redis:6379/0"
+    volumes:
+      - ./routes.yaml:/etc/ws-gw/routes.yaml:ro # routing table
+    command: ["./gateway", "--route-file=/etc/ws-gw/routes.yaml"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    ports:
+      - "15672:15672" # management UI
+      - "15675:15675" # MQTT over WebSocket
+    environment:
+      RABBITMQ_CONFIG_FILE: /etc/rabbitmq/rabbitmq
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro # you need to create this
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit
+    command: >
+      --bind 0.0.0.0
+      --port 7880                             # WebSocket /signal
+      --rtc-port-range 7882,8000              # media ports
+      --http-port 7881                        # optional admin API
+      --api-key livekit_api_key
+      --api-secret livekit_api_secret
+    ports:
+      - "7880:7880" # WS /signal
+      - "7881:7881" # HTTP admin
+      - "7882-8000:7882-8000/udp" # media (SRTP)
+    restart: unless-stopped
+# ---------------------------------------------------------------------------
+# Optional Redis if you enable REDIS_URL in gateway env
+# ---------------------------------------------------------------------------
+#   redis:
+#     image: redis:7-alpine
+#     container_name: redis
+#     ports:
+#       - "6379:6379"
+#     restart: unless-stopped

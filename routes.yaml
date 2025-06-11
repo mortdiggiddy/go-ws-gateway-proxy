@@ -1,0 +1,10 @@
+# EXAMPLE ONLY
+- prefix: /livekit
+  upstream: ws://livekit:7880/signal
+  copySubProtocol: true # forward "livekit_ws"
+  preserveQuery: true # keep ?access_token=...
+
+- prefix: /mqtt
+  upstream: ws://rabbitmq:15675/ws
+  copySubProtocol: false
+  preserveQuery: true
