@@ -15,7 +15,7 @@ spec:
       terminationGracePeriodSeconds: 60 # wait up to 60s for preStop, must be > (GRACEFUL_DRAIN_TIMEOUT_SECONDS + 5)
       containers:
         - name: proxy
-          image: your-registry/go-ws-gateway-proxy:latest
+          image: mortdiggiddy/go-ws-gateway-proxy:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -25,6 +25,12 @@ spec:
                 name: go-ws-gateway-proxy-config
             - secretRef:
                 name: go-ws-gateway-proxy-secrets
+          args:
+            - "--route-file=/etc/ws-gw/routes.yaml"
+          volumeMounts:
+            - name: route-config
+              mountPath: /etc/ws-gw
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
@@ -56,3 +62,7 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+      volumes:
+        - name: route-config
+          configMap:
+            name: ws-gateway-routes
