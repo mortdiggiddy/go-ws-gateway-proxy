@@ -20,6 +20,22 @@ ingress:
   tls:
     secretName: tls-secret
 
+# ------------------------------------------------------------------
+# WebSocket routing table
+# Each entry is matched by URL prefix inside the proxy; customise as
+# needed or override per-environment.
+# ------------------------------------------------------------------
+gatewayRoutes:
+  - prefix: /livekit
+    upstream: ws://livekit-signal.media.svc.cluster.local:7880/signal
+    copySubProtocol: true
+    preserveQuery: true
+
+  - prefix: /mqtt
+    upstream: ws://rabbitmq-mqtt.messaging.svc.cluster.local:15675/ws
+    copySubProtocol: false
+    preserveQuery: true
+
 resources:
   requests:
     cpu: 100m
