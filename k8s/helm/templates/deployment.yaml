@@ -22,16 +22,22 @@ spec:
           ports:
             - containerPort: 8080
               name: http
-          env:
-            {{- range $k, $v := .Values.env }}
-            - name: {{ $k }}
-              value: "{{ $v }}"
-            {{- end }}
+          # env:
+          #   {{- range $k, $v := .Values.env }}
+          #   - name: {{ $k }}
+          #     value: "{{ $v }}"
+          #   {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "go-ws-gateway-proxy.fullname" . }}-config
             - secretRef:
                 name: {{ include "go-ws-gateway-proxy.fullname" . }}-secrets
+          volumeMounts:
+            - name: route-config
+              mountPath: /etc/ws-gw
+              readOnly: true
+          args:
+            - "--route-file=/etc/ws-gw/routes.yaml"
           readinessProbe:
             httpGet:
               path: /healthz
@@ -62,3 +68,7 @@ spec:
             limits:
               cpu: {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
+      volumes:
+        - name: route-config
+          configMap:
+            name: {{ include "go-ws-gateway-proxy.fullname" . }}-routes
