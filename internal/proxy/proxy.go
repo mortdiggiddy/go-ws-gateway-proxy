@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"maps"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -155,9 +157,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 	hdr := http.Header{}
 
 	// copy any headers supplied by the router table (e.g., Sec-WebSocket-Protocol)
-	for k, v := range extraHeaders {
-		hdr[k] = v
-	}
+	maps.Copy(hdr, extraHeaders)
 
 	if proto == "raw" {
 		hdr.Set("Authorization", "Bearer "+jwtToken)
