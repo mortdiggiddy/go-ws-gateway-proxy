@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -70,6 +72,9 @@ var (
 var (
 	// WaitGroup to track active WebSocket sessions for graceful draining
 	sessionsWg sync.WaitGroup
+	routes []proxy.Route
+
+	routeFile = flag.String("route-file", "/etc/ws-gw/routes.yaml", "path to routing config")
 )
 
 func init() {
@@ -112,6 +117,14 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
+	flag.Parse()
+
+	var err error
+	routes, err = proxy.LoadRoutes(*routeFile)
+	if err != nil {
+	    log.Fatalf("route load: %v", err)
+	}
+	
 	http.HandleFunc("/ws", handleWebSocket)
 
 	// healthz for K8s liveness/readiness probes
@@ -350,11 +363,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Proxy traffic to backend
-	if err := proxy.ProxyWebSocket(conn, packet, r, proto, jwtToken, claims, roles); err != nil {
-		proxyErrors.WithLabelValues(proto).Inc()
-		log.Println("Proxying failed:", err)
-	}
+       // Proxy traffic to backend
+       upURL, hdr, err := proxy.UpstreamFor(r, routes)
+       if err != nil {
+               log.Println("routing error:", err)
+               conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1003, "unknown WS path"))
+               return
+       }
+
+       if err := proxy.ProxyWebSocket(conn, packet, r, proto, jwtToken, claims, roles, upURL, hdr); err != nil {
+               proxyErrors.WithLabelValues(proto).Inc()
+               log.Println("Proxying failed:", err)
+       }
 }
 
 // TODO
