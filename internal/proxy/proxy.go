@@ -75,9 +75,10 @@ var (
 	dialRetryMax      = utils.GetEnvInt("WS_DIAL_RETRY_MAX", 3)                                             // dial retry count
 	dialRetryInterval = time.Duration(utils.GetEnvInt("WS_DIAL_RETRY_INTERVAL_SECONDS", 2)) * time.Second   // retry backoff
 
-	upstreamWSURL = utils.GetEnv("UPSTREAM_WS_URL")
 	writeTimeout  = time.Duration(utils.GetEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second
 	idleTimeout   = time.Duration(utils.GetEnvInt("WS_IDLE_TIMEOUT_SECONDS", 60)) * time.Second
+
+	healthRegistry sync.Map
 )
 
 var sharedRedisLimiter ratelimit.RateLimiter
@@ -101,8 +102,6 @@ func init() {
 			sharedRedisLimiter = ratelimit.NewLocalRateLimiter(perSecond, burst)
 		}
 	})
-
-	go upstreamHealthCheck()
 }
 
 // ProxyWebSocket streams traffic between clientConn and an upstream WebSocket server
@@ -113,7 +112,7 @@ func init() {
 // EMQX
 // Mosquitto with WebSocket bridge
 // Any custom WebSocket target
-func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Request, proto string, jwtToken string, claims jwt.MapClaims, roles []string) error {
+func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Request, proto string, jwtToken string, claims jwt.MapClaims, roles []string, upstreamURL string, extraHeaders http.Header) error {
 	connID := uuid.NewString()
 	ctx := context.WithValue(req.Context(), ctxKeyConnID, connID)
 
@@ -147,14 +146,20 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		}
 	}
 
-	u, perr := url.Parse(upstreamWSURL)
+	u, perr := url.Parse(upstreamURL)
 	if perr != nil {
-		log.Printf("[proxy] invalid upstream URL %q: %v", upstreamWSURL, perr)
+		log.Printf("[proxy] invalid upstream URL %q: %v", upstreamURL, perr)
 		return perr
 	}
 
 	// build dial headers for raw WS including Authorization and roles
 	hdr := http.Header{}
+	
+	// copy any headers supplied by the router table (e.g., Sec-WebSocket-Protocol)
+        for k, v := range extraHeaders {
+        	hdr[k] = v
+	}
+	
 	if proto == "raw" {
 		hdr.Set("Authorization", "Bearer "+jwtToken)
 		if len(roles) > 0 {
@@ -167,7 +172,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 	// initial dial with retry loop and backoff
 	for i := 0; i < dialRetryMax; i++ {
-		upstreamConn, _, dialErr = websocket.DefaultDialer.Dial(u.String(), hdr)
+		upstreamConn, _, dialErr = websocket.DefaultDialer.Dial(upstreamURL, hdr)
 
 		if dialErr != nil {
 			proxyRetries.WithLabelValues(proto).Inc() // instrument retries
@@ -181,6 +186,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 			continue
 		}
 
+		ensureHealthChecker(upstreamURL, hdr)
 		resetCircuit(proto) // reset on success
 		break
 	}
@@ -299,7 +305,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			if rerr != nil {
 				log.Printf("[proxy] client read error: %v", rerr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, upstreamURL, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -314,7 +320,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			if werr != nil {
 				log.Printf("[proxy] forward to upstream failed: %v", werr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, upstreamURL, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -335,7 +341,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 
 			if rerr != nil {
 				log.Printf("[proxy] upstream read error: %v", rerr)
-				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, &upstreamReadMu, &upstreamWriteMu) {
+				if tryUpstreamReconnect(ctx, &upstreamConn, hdr, proto, upstreamURL, &upstreamReadMu, &upstreamWriteMu) {
 					continue
 				}
 				recordFailure(ctx, proto)
@@ -385,7 +391,7 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 }
 
 // Attempts to dial a fresh upstream and swap it in place
-func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr http.Header, proto string, upstreamReadMu *sync.Mutex, upstreamWriteMu *sync.Mutex) bool {
+func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr http.Header, proto string, upstreamURL string, upstreamReadMu *sync.Mutex, upstreamWriteMu *sync.Mutex) bool {
 	if isCircuitOpen(proto) {
 		return false
 	}
@@ -399,7 +405,7 @@ func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr htt
 			return false
 		default:
 		}
-		newConn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, hdr)
+		newConn, _, err := websocket.DefaultDialer.Dial(upstreamURL, hdr)
 		if err != nil {
 			log.Printf("[conn=%s proto=%s] dial failure: %v", id, proto, err)
 			proxyRetries.WithLabelValues(proto).Inc()
@@ -414,6 +420,8 @@ func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr htt
 		*connPtr = newConn
 		upstreamWriteMu.Unlock()
 		upstreamReadMu.Unlock()
+
+		ensureHealthChecker(upstreamURL, hdr)
 		resetCircuit(proto)
 		log.Printf("[conn=%s proto=%s] upstream reconnected", id, proto)
 		return true
@@ -421,12 +429,21 @@ func tryUpstreamReconnect(ctx context.Context, connPtr **websocket.Conn, hdr htt
 	return false
 }
 
-// Periodically probes the upstream and resets circuit breaker on success
-func upstreamHealthCheck() {
+// spin up one goroutine for each unique upstream
+func ensureHealthChecker(upURL string, hdr http.Header) {
+	val, _ := healthRegistry.LoadOrStore(upURL, &sync.Once{})
+	val.(*sync.Once).Do(func() {
+		go startHealthLoop(upURL, hdr)
+	})
+}
+
+// actual dial loop
+func startHealthLoop(upURL string, hdr http.Header) {
 	ticker := time.NewTicker(cbHealthInterval)
 	defer ticker.Stop()
+
 	for range ticker.C {
-		conn, _, err := websocket.DefaultDialer.Dial(upstreamWSURL, nil)
+		conn, _, err := websocket.DefaultDialer.Dial(upURL, hdr)
 		if err != nil {
 			healthFail.Inc()
 			continue
@@ -437,7 +454,6 @@ func upstreamHealthCheck() {
 		cbFailureCount = 0
 		cbOpenUntil = time.Time{}
 		cbMutex.Unlock()
-		log.Println("Upstream healthy; circuit closed")
 	}
 }
 
