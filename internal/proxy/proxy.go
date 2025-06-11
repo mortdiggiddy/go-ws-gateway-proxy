@@ -64,6 +64,12 @@ var (
 		},
 		[]string{"key"},
 	)
+	revokedSessions = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "ws_revocations_total",
+			Help: "WebSocket sessions closed due to token revocation",
+		},
+	)
 )
 
 // Circuit breaker state
@@ -87,7 +93,7 @@ var sharedRedisLimiter ratelimit.RateLimiter
 var once sync.Once
 
 func init() {
-	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail, rateLimitViolations)
+	prometheus.MustRegister(proxyRetries, circuitOpenCount, healthSuccess, healthFail, rateLimitViolations, revokedSessions)
 
 	once.Do(func() {
 		perSecond := utils.GetEnvInt("RATE_LIMIT_PER_SECOND", 10)
@@ -375,6 +381,8 @@ func ProxyWebSocket(clientConn *websocket.Conn, initial []byte, req *http.Reques
 		log.Printf("[proxy] context canceled, shutting down")
 	case <-revCh:
 		// poison-pill received
+		revokedSessions.Inc()
+
 		clientWriteMu.Lock()
 		clientConn.WriteControl(
 			websocket.CloseMessage,
