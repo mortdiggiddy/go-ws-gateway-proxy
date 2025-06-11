@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ws-gateway-routes
+  namespace: messaging           # <-- keep identical to the proxy Deployment
+data:
+  # routes.yaml will be read by the proxy on startup.
+  # Replace the upstream URLs with your own service endpoints.
+  routes.yaml: |
+    - prefix: /livekit
+      upstream: ws://livekit-signal.media.svc.cluster.local:7880/signal
+      copySubProtocol: true
+      preserveQuery: true
+    - prefix: /mqtt
+      upstream: ws://rabbitmq-mqtt.messaging.svc.cluster.local:15675/ws
+      copySubProtocol: false
+      preserveQuery: true
