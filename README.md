@@ -250,7 +250,6 @@ Set values like:
 ```env
 JWKS_URL=https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs
 WS_IDLE_TIMEOUT_SECONDS=90
-UPSTREAM_WS_URL=ws://rabbitmq:15675/ws
 RAW_WS_BACKEND_URL=ws://backend-service:8081/raw
 ```
 
@@ -287,7 +286,6 @@ docker run -p 8080:8080 \
   go-ws-gateway-proxy:latest
 ```
 
-
 ### Step 3: Access Metrics & Health
 
 - `http://localhost:8080/metrics`
@@ -306,10 +304,10 @@ docker run -p 8080:8080 \
 
 ### 🗺️ Routing table
 
-| File | When |
-|------|------|
+| File                             | When                                                |
+| -------------------------------- | --------------------------------------------------- |
 | `k8s/base/configmap-routes.yaml` | Kustomize base – edit or patch to add new upstreams |
-| `values.yaml → gatewayRoutes:` | Helm chart – override per environment |
+| `values.yaml → gatewayRoutes:`   | Helm chart – override per environment               |
 
 The proxy loads the YAML, matches the first `prefix` that fits
 `req.URL.Path`, and dials the `upstream` with optional sub-protocol copying
@@ -369,10 +367,10 @@ and query-string preservation.
 
 ## 🔮 Future Enhancements
 
-### 🚏 Multi-Upstream Routing  (NEW in v0.3)
+### 🚏 Multi-Upstream Routing (NEW in v0.3)
 
 Routes are now declared by ConfigMap (Kustomize) or `gatewayRoutes` in Helm
-values.  Each entry maps a URL prefix to an upstream WebSocket endpoint:
+values. Each entry maps a URL prefix to an upstream WebSocket endpoint:
 
 ```yaml
 gatewayRoutes:
